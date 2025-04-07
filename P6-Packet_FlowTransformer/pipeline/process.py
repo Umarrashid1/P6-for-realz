@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 from .config import categorical_columns, numerical_columns, LABEL_MAPPING
+import torch
 
 # Define global variables for min/max of numerical columns
 global_min = pd.Series(dtype='float64')
@@ -40,11 +41,11 @@ def find_label_from_path(file_path):
 
 
 def second_pass(dataset_dir, output_file):
-    print("Starting second pass (processing and writing to CSV)...")
+    print("Starting second pass (processing and writing to .pt)...")
 
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
-
-    first_file = True
+    all_numerical = []
+    all_categorical = []
+    all_labels = []
 
     for root, _, files in os.walk(dataset_dir):
         for file in files:
@@ -52,10 +53,8 @@ def second_pass(dataset_dir, output_file):
                 file_path = os.path.join(root, file)
                 print(f"Processing file: {file_path}")
 
-                # Read the CSV file
                 df = pd.read_csv(file_path)
 
-                # Get label from any folder in the path
                 label = find_label_from_path(file_path)
                 if label == -1:
                     print(f"Skipping unknown folder: {file_path}")
@@ -67,21 +66,27 @@ def second_pass(dataset_dir, output_file):
                         min_val, max_val = global_min[col], global_max[col]
                         df[col] = (df[col] - min_val) / (max_val - min_val) if max_val != min_val else 0.0
 
-                # Keep categorical columns as they are (for later embedding)
-                df_cat = df[categorical_columns].copy()
-                df = df.drop(columns=categorical_columns)
+                # Extract relevant columns
+                df_numerical = df[numerical_columns].astype(np.float32)
+                df_categorical = df[categorical_columns].astype("category").apply(lambda x: x.cat.codes).astype(np.int64)
+                labels = np.full(len(df), label, dtype=np.int64)
 
-                # Reattach categorical columns
-                df = pd.concat([df, df_cat], axis=1)
+                # Store for later torch conversion
+                all_numerical.append(torch.tensor(df_numerical.values))
+                all_categorical.append(torch.tensor(df_categorical.values))
+                all_labels.append(torch.tensor(labels))
 
-                # Add the label column
-                df["label"] = label
+    # Stack all data
+    numerical_tensor = torch.cat(all_numerical, dim=0)
+    categorical_tensor = torch.cat(all_categorical, dim=0)
+    label_tensor = torch.cat(all_labels, dim=0)
 
-                # Write DataFrame to CSV
-                if first_file:
-                    df.to_csv(output_file, mode='w', index=False)
-                    first_file = False
-                else:
-                    df.to_csv(output_file, mode='a', header=False, index=False)
+    # Save to .pt
+    output_dict = {
+        "numerical": numerical_tensor,
+        "categorical": categorical_tensor,
+        "label": label_tensor
+    }
 
-    print(f"CSV file written to {output_file}")
+    torch.save(output_dict, output_file)
+    print(f"Data saved as PyTorch tensor to {output_file}")
