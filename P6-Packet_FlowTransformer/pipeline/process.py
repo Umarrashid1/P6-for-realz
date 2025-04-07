@@ -48,46 +48,64 @@ def second_pass(dataset_dir, output_file):
     all_labels = []
 
     file_counter = 0
-    skipped_files = 0
+    skipped_label = 0
+    skipped_columns = 0
+    total_skipped = 0
 
     for root, _, files in os.walk(dataset_dir):
         for file in files:
             if file.endswith(".csv"):
                 file_counter += 1
                 file_path = os.path.join(root, file)
-                print(f"Processing file: {file_path}")
+                print(f"\n[INFO] Processing file: {file_path}")
 
-                df = pd.read_csv(file_path)
+                try:
+                    df = pd.read_csv(file_path)
+                except Exception as e:
+                    print(f"[ERROR] Could not read file: {e}")
+                    total_skipped += 1
+                    continue
 
                 label = find_label_from_path(file_path)
                 if label == -1:
-                    print(f"[SKIP] Unknown folder: {file_path}")
-                    skipped_files += 1
+                    print(f"[SKIP] No label match for path: {file_path}")
+                    skipped_label += 1
+                    total_skipped += 1
                     continue
 
-                # Safety: check required columns exist
-                if not all(col in df.columns for col in numerical_columns + categorical_columns):
-                    print(f"[SKIP] Missing columns in: {file_path}")
-                    skipped_files += 1
+                missing_num = [col for col in numerical_columns if col not in df.columns]
+                missing_cat = [col for col in categorical_columns if col not in df.columns]
+
+                if missing_num or missing_cat:
+                    print(f"[SKIP] Missing columns in {file_path}")
+                    if missing_num:
+                        print(f"  Missing numerical columns: {missing_num[:5]}{'...' if len(missing_num) > 5 else ''}")
+                    if missing_cat:
+                        print(f"  Missing categorical columns: {missing_cat[:5]}{'...' if len(missing_cat) > 5 else ''}")
+                    skipped_columns += 1
+                    total_skipped += 1
                     continue
 
-                # Normalize numerical
+                # Normalize numerical features
                 for col in numerical_columns:
-                    if col in df.columns and col in global_min and col in global_max:
+                    if col in global_min and col in global_max:
                         min_val, max_val = global_min[col], global_max[col]
                         df[col] = (df[col] - min_val) / (max_val - min_val) if max_val != min_val else 0.0
 
-                # Convert to tensors
                 df_numerical = df[numerical_columns].astype(np.float32)
-                df_categorical = df[categorical_columns].astype("category").apply(lambda x: x.cat.codes).astype(
-                    np.int64)
+                df_categorical = df[categorical_columns].astype("category").apply(lambda x: x.cat.codes).astype(np.int64)
                 labels = np.full(len(df), label, dtype=np.int64)
 
                 all_numerical.append(torch.tensor(df_numerical.values))
                 all_categorical.append(torch.tensor(df_categorical.values))
                 all_labels.append(torch.tensor(labels))
 
-    print(f"Finished. Processed files: {file_counter}, Skipped: {skipped_files}")
+    print("\n[SUMMARY]")
+    print(f"  Total CSV files found:      {file_counter}")
+    print(f"  Files skipped (no label):   {skipped_label}")
+    print(f"  Files skipped (bad cols):   {skipped_columns}")
+    print(f"  Total skipped:              {total_skipped}")
+    print(f"  Successfully processed:     {file_counter - total_skipped}")
 
     if not all_numerical:
         raise RuntimeError("No valid data found. All files were skipped.")
@@ -102,4 +120,4 @@ def second_pass(dataset_dir, output_file):
         "label": label_tensor
     }, output_file)
 
-    print(f"Data saved as PyTorch tensor to {output_file}")
+    print(f"\n✅ Data saved to {output_file}")
