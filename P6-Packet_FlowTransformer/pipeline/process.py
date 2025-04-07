@@ -47,9 +47,13 @@ def second_pass(dataset_dir, output_file):
     all_categorical = []
     all_labels = []
 
+    file_counter = 0
+    skipped_files = 0
+
     for root, _, files in os.walk(dataset_dir):
         for file in files:
             if file.endswith(".csv"):
+                file_counter += 1
                 file_path = os.path.join(root, file)
                 print(f"Processing file: {file_path}")
 
@@ -57,36 +61,45 @@ def second_pass(dataset_dir, output_file):
 
                 label = find_label_from_path(file_path)
                 if label == -1:
-                    print(f"Skipping unknown folder: {file_path}")
+                    print(f"[SKIP] Unknown folder: {file_path}")
+                    skipped_files += 1
                     continue
 
-                # Normalize numerical columns
+                # Safety: check required columns exist
+                if not all(col in df.columns for col in numerical_columns + categorical_columns):
+                    print(f"[SKIP] Missing columns in: {file_path}")
+                    skipped_files += 1
+                    continue
+
+                # Normalize numerical
                 for col in numerical_columns:
                     if col in df.columns and col in global_min and col in global_max:
                         min_val, max_val = global_min[col], global_max[col]
                         df[col] = (df[col] - min_val) / (max_val - min_val) if max_val != min_val else 0.0
 
-                # Extract relevant columns
+                # Convert to tensors
                 df_numerical = df[numerical_columns].astype(np.float32)
-                df_categorical = df[categorical_columns].astype("category").apply(lambda x: x.cat.codes).astype(np.int64)
+                df_categorical = df[categorical_columns].astype("category").apply(lambda x: x.cat.codes).astype(
+                    np.int64)
                 labels = np.full(len(df), label, dtype=np.int64)
 
-                # Store for later torch conversion
                 all_numerical.append(torch.tensor(df_numerical.values))
                 all_categorical.append(torch.tensor(df_categorical.values))
                 all_labels.append(torch.tensor(labels))
 
-    # Stack all data
+    print(f"Finished. Processed files: {file_counter}, Skipped: {skipped_files}")
+
+    if not all_numerical:
+        raise RuntimeError("No valid data found. All files were skipped.")
+
     numerical_tensor = torch.cat(all_numerical, dim=0)
     categorical_tensor = torch.cat(all_categorical, dim=0)
     label_tensor = torch.cat(all_labels, dim=0)
 
-    # Save to .pt
-    output_dict = {
+    torch.save({
         "numerical": numerical_tensor,
         "categorical": categorical_tensor,
         "label": label_tensor
-    }
+    }, output_file)
 
-    torch.save(output_dict, output_file)
     print(f"Data saved as PyTorch tensor to {output_file}")
