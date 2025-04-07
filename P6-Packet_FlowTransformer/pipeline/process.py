@@ -27,6 +27,10 @@ def first_pass(dataset_dir):
                 global_min = pd.concat([global_min, numeric_df.min()]).groupby(level=0).min()
                 global_max = pd.concat([global_max, numeric_df.max()]).groupby(level=0).max()
 
+    print("\n[DEBUG] Global min/max sample:")
+    print(global_min.head(5))
+    print(global_max.head(5))
+
 
 def find_label_from_path(file_path):
     # Walk up the folder tree to find a matching label from LABEL_MAPPING
