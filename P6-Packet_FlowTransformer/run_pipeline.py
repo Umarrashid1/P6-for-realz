@@ -1,13 +1,12 @@
 from pipeline.process import first_pass, second_pass
 
 # Set these to your actual dataset and output path
-DATASET_DIR = r"C:\Users\ronie\OneDrive - Aalborg Universitet\Documents\P6"
-OUTPUT_FILE = r"C:\Users\ronie\OneDrive - Aalborg Universitet\Documents\P6\processed_output.csv"
+DATASET_DIR = '../../dataset/raw_dataset/'
+OUTPUT_FILE = '../../dataset/'
 
-if __name__ == "__main__":
-    first_pass(DATASET_DIR)
-    second_pass(DATASET_DIR, OUTPUT_FILE)
-    print("Pipeline completed successfully.")
+first_pass(DATASET_DIR)
+second_pass(DATASET_DIR, OUTPUT_FILE)
+print("Pipeline completed successfully.")
 
 
 # This script processes a dataset of CSV files, normalizes numerical columns, and writes the results to a new CSV file.
