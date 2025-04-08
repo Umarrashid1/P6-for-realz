@@ -4,8 +4,8 @@ from process import preprocess_all_in_memory  # <- update import
 from config import numerical_columns, categorical_columns, LABEL_MAPPING
 
 def test_preprocess_subset(tmp_path):
-    dataset_dir = '../../dataset/raw_dataset'
-    output_file = '../../dataset/test_packet.pt'
+    dataset_dir = '../../../dataset/raw_dataset'
+    output_file = '../../../dataset/test_packet.pt'
 
     preprocess_all_in_memory(
         dataset_dir=dataset_dir,
