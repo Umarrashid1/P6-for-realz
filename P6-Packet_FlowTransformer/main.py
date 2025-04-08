@@ -5,7 +5,7 @@ from train.train import train_model
 from pipeline.config import numerical_columns, categorical_columns
 
 
-dataset = IoTDataset("path_to_file.pt")
+dataset = IoTDataset("../../dataset/packet.pt")
 model = IoTTransformer(
     num_numerical=len(numerical_columns),
     num_categorical=len(categorical_columns),
