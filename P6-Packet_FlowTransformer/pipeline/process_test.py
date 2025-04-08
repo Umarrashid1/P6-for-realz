@@ -41,3 +41,6 @@ def test_preprocess_subset(tmp_path):
     assert unique_labels.issubset(valid_labels), f"Invalid labels found: {unique_labels - valid_labels}"
 
     print(f" Unit test passed — processed {num.shape[0]} rows with labels {sorted(unique_labels)}.")
+
+if __name__ == "__main__":
+    test_preprocess_subset(None)
