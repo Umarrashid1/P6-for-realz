@@ -1,4 +1,6 @@
 from torch.utils.data import DataLoader
+import torch
+import torch.nn as nn
 import torch.optim as optim
 from sklearn.metrics import accuracy_score
 
