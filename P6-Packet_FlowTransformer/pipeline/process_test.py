@@ -1,7 +1,7 @@
 import torch
 import os
-from pipeline.process import preprocess_all_in_memory
-from pipeline.config import categorical_columns, numerical_columns, LABEL_MAPPING
+from .process import preprocess_all_in_memory
+from .config import categorical_columns, numerical_columns, LABEL_MAPPING
 
 def test_preprocess_subset(tmp_path):
     dataset_dir = '../../../dataset/raw_dataset'
