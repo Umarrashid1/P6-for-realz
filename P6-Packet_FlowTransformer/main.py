@@ -3,6 +3,8 @@ from pipeline.iot_dataset import IoTDataset
 from models.transformer import IoTTransformer
 from train.train import train_model
 from pipeline.config import numerical_columns, categorical_columns
+from torch.utils.data import Subset
+
 
 
 dataset = IoTDataset("../../dataset/packet.pt")
@@ -18,4 +20,7 @@ model = IoTTransformer(
 )
 
 
-train_model(model, dataset)
+subset_indices = list(range(10000))
+subset = Subset(dataset, subset_indices)
+
+train_model(model, subset, epochs=3)
