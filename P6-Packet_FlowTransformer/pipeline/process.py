@@ -20,7 +20,7 @@ def first_pass(dataset_dir):
                 print(f"Processing file: {file_path}")
 
                 # Read the CSV file
-                df = pd.read_csv(file_path, low_memory=False)
+                df = pd.read_csv(file_path)
 
                 # Update global min/max for numerical columns
                 numeric_df = df[numerical_columns].select_dtypes(include=[np.number])
