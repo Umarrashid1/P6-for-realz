@@ -4,6 +4,7 @@ from models.transformer import IoTTransformer
 from train.train import train_model
 from pipeline.config import numerical_columns, categorical_columns
 from torch.utils.data import Subset
+import torch
 
 
 
