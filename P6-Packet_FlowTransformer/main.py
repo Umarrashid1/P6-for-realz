@@ -7,8 +7,9 @@ from torch.utils.data import Subset
 
 
 
-dataset = IoTDataset("../../dataset/packet.pt")
-categorical_tensor = dataset["categorical"]
+raw_data = torch.load("../../dataset/packet.pt")
+categorical_tensor = raw_data["categorical"]
+
 
 cat_cardinalities = [int(torch.max(categorical_tensor[:, i]) + 1) for i in range(categorical_tensor.shape[1])]
 
