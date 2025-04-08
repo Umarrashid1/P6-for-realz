@@ -13,11 +13,12 @@ LABEL_MAPPING = {
 }
 
 # Categorical & numerical feature lists
-categorical_columns = ['stream', 'src_mac', 'dst_mac', 'src_ip', 'dst_ip', 'port_class_dst', 'l4_tcp',
+categorical_columns = ['src_mac', 'dst_mac', 'src_ip', 'dst_ip', 'port_class_dst', 'l4_tcp',
                        'l4_udp', 'handshake_version', 'handshake_ciphersuites', 'handshake_sig_hash_alg_len',
-                       'tls_server', 'http_request_method', 'http_host', 'user_agent', 'dns_server', 'dns_query_type',
+                       'tls_server', 'http_request_method',  'user_agent', 'dns_server', 'dns_query_type',
                        'device_mac', 'eth_src_oui', 'eth_dst_oui', 'http_content_type', 'icmp_type',
-                       'icmp_checksum_status', 'http_uri']
+                       'icmp_checksum_status' #,'http_uri', 'http_host', 'stream'
+                       ]
 
 
 numerical_columns = [
