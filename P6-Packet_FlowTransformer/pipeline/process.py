@@ -9,7 +9,7 @@ global_min = pd.Series(dtype='float64')
 global_max = pd.Series(dtype='float64')
 
 
-def preprocess_all_in_memory(dataset_dir, output_file, test_mode=False, rows_per_file=100):
+def preprocess_all_in_memory(dataset_dir, output_file, test_mode=False, rows_per_file=100, missing_strategy="zero"):
     all_dfs = []
 
     for root, _, files in os.walk(dataset_dir):
@@ -43,13 +43,32 @@ def preprocess_all_in_memory(dataset_dir, output_file, test_mode=False, rows_per
 
     full_df = pd.concat(all_dfs, ignore_index=True)
 
-    # Identify and print dropped rows
-    before_drop = len(full_df)
-    full_df["__drop_reason__"] = full_df[numerical_columns + categorical_columns].isnull().any(axis=1)
-    dropped_rows = full_df[full_df["__drop_reason__"]]
-    for _, row in dropped_rows.iterrows():
-        print(f"[DROP] Row from {row['__source__']} had missing values: {row.to_dict()}")
-    full_df.dropna(subset=numerical_columns + categorical_columns, inplace=True)
+
+
+    # Handle missing values
+    if missing_strategy == "mean":
+        for col in numerical_columns:
+            full_df[col].fillna(full_df[col].mean(), inplace=True)
+        for col in categorical_columns:
+            full_df[col].fillna(full_df[col].mode().iloc[0], inplace=True)
+
+    elif missing_strategy == "median":
+        for col in numerical_columns:
+            full_df[col].fillna(full_df[col].median(), inplace=True)
+        for col in categorical_columns:
+            full_df[col].fillna(full_df[col].mode().iloc[0], inplace=True)
+
+    elif missing_strategy == "zero":
+        full_df[numerical_columns] = full_df[numerical_columns].fillna(0)
+        full_df[categorical_columns] = full_df[categorical_columns].fillna("unknown")
+
+    elif missing_strategy == "ffill":
+        full_df.fillna(method='ffill', inplace=True)
+
+
+
+    else:
+        raise ValueError(f"Unknown missing_strategy: {missing_strategy}")
 
     # Normalize numerical
     full_df[numerical_columns] = (full_df[numerical_columns] - full_df[numerical_columns].min()) / (
