@@ -1,4 +1,4 @@
-from pipeline.process import preprocess_all_in_memory
+from .pipeline.process import preprocess_all_in_memory
 
 # Set these to your actual dataset and output path
 DATASET_DIR = '../../dataset/raw_dataset'
