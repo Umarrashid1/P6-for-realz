@@ -1,11 +1,15 @@
-from pipeline.process import first_pass, second_pass
+from pipeline.process import preprocess_all_in_memory
 
 # Set these to your actual dataset and output path
 DATASET_DIR = '../../dataset/raw_dataset'
 OUTPUT_FILE = '../../dataset/packet.pt'
 
-first_pass(DATASET_DIR)
-second_pass(DATASET_DIR, OUTPUT_FILE)
+preprocess_all_in_memory(
+    dataset_dir=DATASET_DIR,
+    output_file=str(OUTPUT_FILE),
+    test_mode=True,
+    rows_per_file=20000
+)
 print("Pipeline completed successfully.")
 
 
