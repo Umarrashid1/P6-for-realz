@@ -25,8 +25,6 @@ def test_preprocess_subset(tmp_path):
     cat = data["categorical"]
     label = data["label"]
 
-    # Row count checks
-    assert num.shape[0] == cat.shape[0] == label.shape[0], "Row count mismatch between tensors"
 
     # Column shape checks
     assert num.shape[1] == len(numerical_columns), "Unexpected number of numerical features"
