@@ -1,8 +1,8 @@
 from pipeline.process import preprocess_all_in_memory
 
 # Set these to your actual dataset and output path
-DATASET_DIR = '../dataset/raw_dataset'
-OUTPUT_FILE = '../dataset/packet.pt'
+DATASET_DIR = '../../dataset/raw_dataset'
+OUTPUT_FILE = '../../dataset/packet.pt'
 
 preprocess_all_in_memory(
     dataset_dir=DATASET_DIR,
