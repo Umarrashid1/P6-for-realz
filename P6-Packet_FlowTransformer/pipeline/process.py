@@ -10,8 +10,6 @@ global_max = pd.Series(dtype='float64')
 
 
 def preprocess_all_in_memory(dataset_dir, output_file, test_mode=False, rows_per_file=100):
-
-
     all_dfs = []
 
     for root, _, files in os.walk(dataset_dir):
@@ -30,12 +28,14 @@ def preprocess_all_in_memory(dataset_dir, output_file, test_mode=False, rows_per
                     print(f"[ERROR] Couldn't read {file_path}: {e}")
                     continue
 
-                if not all(col in df.columns for col in numerical_columns + categorical_columns):
-                    print(f"[SKIP] Missing columns in: {file_path}")
+                missing_cols = [col for col in numerical_columns + categorical_columns if col not in df.columns]
+                if missing_cols:
+                    print(f"[SKIP] Missing columns in {file_path}: {missing_cols}")
                     continue
 
                 df = df[numerical_columns + categorical_columns].copy()
                 df["__label__"] = label
+                df["__source__"] = file_path  # For diagnostics
                 all_dfs.append(df)
 
     if not all_dfs:
@@ -43,7 +43,12 @@ def preprocess_all_in_memory(dataset_dir, output_file, test_mode=False, rows_per
 
     full_df = pd.concat(all_dfs, ignore_index=True)
 
-    # Drop rows with missing values (we might later impute)
+    # Identify and print dropped rows
+    before_drop = len(full_df)
+    full_df["__drop_reason__"] = full_df[numerical_columns + categorical_columns].isnull().any(axis=1)
+    dropped_rows = full_df[full_df["__drop_reason__"]]
+    for _, row in dropped_rows.iterrows():
+        print(f"[DROP] Row from {row['__source__']} had missing values: {row.to_dict()}")
     full_df.dropna(subset=numerical_columns + categorical_columns, inplace=True)
 
     # Normalize numerical
@@ -53,6 +58,14 @@ def preprocess_all_in_memory(dataset_dir, output_file, test_mode=False, rows_per
 
     # Encode categorical
     full_df[categorical_columns] = full_df[categorical_columns].astype("category").apply(lambda x: x.cat.codes)
+
+    # Print label distribution
+    label_counts = full_df["__label__"].value_counts().sort_index()
+    print("\n[INFO] Label distribution:")
+    for label_id, count in label_counts.items():
+        label_name = [k for k, v in LABEL_MAPPING.items() if v == label_id]
+        label_str = label_name[0] if label_name else str(label_id)
+        print(f"  {label_str} ({label_id}): {count} rows")
 
     # Convert to tensors
     numerical_tensor = torch.tensor(full_df[numerical_columns].values, dtype=torch.float32)
@@ -66,7 +79,7 @@ def preprocess_all_in_memory(dataset_dir, output_file, test_mode=False, rows_per
         "label": label_tensor
     }, output_file)
 
-    print(f"\n Preprocessing complete — saved {len(full_df)} rows to {output_file}")
+    print(f"\n[INFO] Preprocessing complete — saved {len(full_df)} rows to {output_file}")
 
 
 def find_label_from_path(file_path):
@@ -79,5 +92,4 @@ def find_label_from_path(file_path):
                 return LABEL_MAPPING[key]
         current_path = os.path.dirname(current_path)
     return -1
-
 
