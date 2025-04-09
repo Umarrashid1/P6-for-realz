@@ -13,9 +13,7 @@ def split_dataset_three_ways(dataset, val_ratio=0.1, test_ratio=0.1):
     test_size = int(total_size * test_ratio)
     train_size = total_size - val_size - test_size
 
-    print(f"Train size: {len(train_dataset)}")
-    print(f"Val size:   {len(val_dataset)}")
-    print(f"Test size:  {len(test_dataset)}")
+
 
     return random_split(dataset, [train_size, val_size, test_size])
 
@@ -40,6 +38,12 @@ full_dataset = IoTDataset(dataset_path)
 
 # Split the subset into train/val/test
 train_dataset, val_dataset, test_dataset = split_dataset_three_ways(full_dataset, val_ratio=0.1, test_ratio=0.1)
+
+# Print subset sizes
+print(f"Train size: {len(train_dataset)}")
+print(f"Val size:   {len(val_dataset)}")
+print(f"Test size:  {len(test_dataset)}")
+
 
 # Train with training and validation sets
 train_model(model, train_dataset, val_dataset, epochs=3)
