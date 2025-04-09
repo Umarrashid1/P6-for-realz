@@ -12,9 +12,6 @@ def split_dataset_three_ways(dataset, val_ratio=0.1, test_ratio=0.1):
     val_size = int(total_size * val_ratio)
     test_size = int(total_size * test_ratio)
     train_size = total_size - val_size - test_size
-
-
-
     return random_split(dataset, [train_size, val_size, test_size])
 
 # Load full dataset
@@ -46,7 +43,10 @@ print(f"Test size:  {len(test_dataset)}")
 
 
 # Train with training and validation sets
-train_model(model, train_dataset, val_dataset, epochs=3)
+train_model(model,
+            train_dataset,
+            val_dataset,
+            epochs=3)
 
 # Test on the held-out test set
 test_model(model, test_dataset)

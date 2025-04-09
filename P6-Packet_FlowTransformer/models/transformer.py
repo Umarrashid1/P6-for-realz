@@ -4,9 +4,6 @@ import torch.nn as nn
 class IoTTransformer(nn.Module):
     def __init__(self, num_numerical, cat_cardinalities, num_classes, embed_dim=32, num_heads=4, num_layers=2, dropout=0.1):
         super().__init__()
-
-
-
         self.cat_embeddings = nn.ModuleList([
             nn.Embedding(num_embeddings=card, embedding_dim=embed_dim)
             for card in cat_cardinalities
