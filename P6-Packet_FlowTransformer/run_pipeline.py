@@ -8,7 +8,7 @@ preprocess_all_in_memory(
     dataset_dir=DATASET_DIR,
     output_file=str(OUTPUT_FILE),
     test_mode=True,
-    rows_per_file=1
+    rows_per_file=20000
 )
 print("Pipeline completed successfully.")
 
