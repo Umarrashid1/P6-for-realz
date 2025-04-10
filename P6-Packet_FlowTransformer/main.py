@@ -46,7 +46,7 @@ print(f"Test size:  {len(test_dataset)}")
 train_model(model,
             train_dataset,
             val_dataset,
-            epochs=3)
+            epochs=5)
 
 # Test on the held-out test set
 test_model(model, test_dataset)
