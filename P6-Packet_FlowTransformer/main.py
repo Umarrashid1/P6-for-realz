@@ -15,7 +15,7 @@ def split_dataset_three_ways(dataset, val_ratio=0.1, test_ratio=0.1):
     return random_split(dataset, [train_size, val_size, test_size])
 
 # Load full dataset
-dataset_path = "../../dataset/packet.pt"
+dataset_path = "../../dataset/packet_small.pt"
 raw_data = torch.load(dataset_path)
 print("Dataset loaded")
 

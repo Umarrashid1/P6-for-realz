@@ -55,7 +55,7 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
         val_acc = accuracy_score(val_labels, val_preds)
 
         print(f"Epoch {epoch+1}/{epochs} - Loss: {total_loss:.4f} - Train Acc: {train_acc:.4f} - Val Acc: {val_acc:.4f}")
-        torch.save(model.state_dict(), "iot_transformer_pretrained.pt")
+        torch.save(model.state_dict(), "iot_transformer_pretrained_small.pt")
         print("Saved pretrained model for finetuning.")
 
 
