@@ -7,7 +7,7 @@ OUTPUT_FILE = '../../dataset/packet.pt'
 preprocess_all_in_memory(
     dataset_dir=DATASET_DIR,
     output_file=str(OUTPUT_FILE),
-    test_mode=False,
+    test_mode=True,
     rows_per_file=1
 )
 print("Pipeline completed successfully.")

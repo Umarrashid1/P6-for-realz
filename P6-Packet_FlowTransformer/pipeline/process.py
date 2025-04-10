@@ -9,7 +9,7 @@ global_min = pd.Series(dtype='float64')
 global_max = pd.Series(dtype='float64')
 
 
-def preprocess_all_in_memory(dataset_dir, output_file, test_mode=False, rows_per_file=100, missing_strategy="zero"):
+def preprocess_all_in_memory(dataset_dir, output_file, test_mode=False, rows_per_file=20000, missing_strategy="zero"):
     all_dfs = []
 
     for root, _, files in os.walk(dataset_dir):
