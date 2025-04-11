@@ -48,12 +48,14 @@ categorical_columns_flows = [
     # "Flow ID",
     "Src IP",
     "Dst IP",
-    "Protocol"
+    "Protocol",
+    "Src Port",
+    "Dst Port",
 ]
 
 
 numerical_columns_flows = [
-    "Src Port", "Dst Port", #"Timestamp",
+    #"Timestamp",
     "Flow Duration",
     "Total Fwd Packet", "Total Bwd packets",
     "Total Length of Fwd Packet", "Total Length of Bwd Packet",
