@@ -1,7 +1,7 @@
 from pipeline.process import preprocess_all_in_memory
 import pipeline.config as config
 # Set these to your actual dataset and output path
-DATASET_DIR = '../../dataset/raw_dataset'
+DATASET_DIR = '../../dataset/roni'
 OUTPUT_FILE = '../../dataset/flow.pt'
 
 categorical_columns = config.categorical_columns_flows
