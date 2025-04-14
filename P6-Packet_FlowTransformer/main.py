@@ -15,7 +15,9 @@ def split_dataset_three_ways(dataset, val_ratio=0.1, test_ratio=0.1):
     return random_split(dataset, [train_size, val_size, test_size])
 
 # Load full dataset
-dataset_path = "../../dataset/packet_small.pt"
+# dataset_path = "../../dataset/packet_small.pt"
+dataset_path = "../../dataset/flow.pt"
+
 raw_data = torch.load(dataset_path)
 print("Dataset loaded")
 
@@ -30,6 +32,8 @@ model = IoTTransformer(
     num_classes=8
 )
 
+post_model = torch.load("iot_transformer_pretrained_small.pt")
+
 # Re-wrap the data using your custom Dataset class
 full_dataset = IoTDataset(dataset_path)
 
@@ -43,13 +47,13 @@ print(f"Test size:  {len(test_dataset)}")
 
 
 # Train with training and validation sets
-train_model(model,
+train_model(post_model,
             train_dataset,
             val_dataset,
             epochs=5)
 
 # Test on the held-out test set
-test_model(model, test_dataset)
+test_model(post_model, test_dataset)
 
 
 
