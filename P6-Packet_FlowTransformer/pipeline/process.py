@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import numpy as np
-from .config import categorical_columns, numerical_columns, LABEL_MAPPING
+from .config import LABEL_MAPPING
 import torch
 
 # Define global variables for min/max of numerical columns
@@ -9,7 +9,12 @@ global_min = pd.Series(dtype='float64')
 global_max = pd.Series(dtype='float64')
 
 
-def preprocess_all_in_memory(dataset_dir, output_file, test_mode=False, rows_per_file=20000, missing_strategy="zero"):
+def preprocess_all_in_memory(dataset_dir,
+                             output_file,
+                             categorical_columns,
+                             numerical_columns,
+                             test_mode=False, rows_per_file=20000,
+                             missing_strategy="zero"):
     all_dfs = []
 
     for root, _, files in os.walk(dataset_dir):
@@ -103,6 +108,7 @@ def preprocess_all_in_memory(dataset_dir, output_file, test_mode=False, rows_per
 
 def find_label_from_path(file_path):
     # Walk up the folder tree to find a matching label from LABEL_MAPPING
+    # Change to something sane
     current_path = os.path.dirname(file_path)
     while current_path != os.path.dirname(current_path):  # Stop at filesystem root
         folder_name = os.path.basename(current_path)

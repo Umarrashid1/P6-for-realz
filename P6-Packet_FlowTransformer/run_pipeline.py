@@ -1,14 +1,20 @@
 from pipeline.process import preprocess_all_in_memory
-
+import pipeline.config as config
 # Set these to your actual dataset and output path
 DATASET_DIR = '../../dataset/raw_dataset'
-OUTPUT_FILE = '../../dataset/packet_small.pt'
+OUTPUT_FILE = '../../dataset/flow.pt'
+
+categorical_columns = config.categorical_columns_flows
+numerical_columns = config.numerical_columns_flows
+
 
 preprocess_all_in_memory(
     dataset_dir=DATASET_DIR,
     output_file=str(OUTPUT_FILE),
+    categorical_columns=categorical_columns,
+    numerical_columns=numerical_columns,
     test_mode=True,
-    rows_per_file=20000
+    rows_per_file=20000,
 )
 print("Pipeline completed successfully.")
 
