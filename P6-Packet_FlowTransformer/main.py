@@ -1,7 +1,7 @@
 from pipeline.iot_dataset import IoTDataset
 from models.transformer import IoTTransformer
 from train.train import train_model, test_model
-from pipeline.config import numerical_columns, categorical_columns
+import pipeline.config as config
 from torch.utils.data import Subset, random_split
 import torch
 
@@ -27,13 +27,17 @@ cat_cardinalities = [int(torch.max(categorical_tensor[:, i]) + 1) for i in range
 
 # Init model
 model = IoTTransformer(
-    num_numerical=len(numerical_columns),
+    num_numerical=len(config.numerical_columns_flows),
     cat_cardinalities=cat_cardinalities,
     num_classes=8
 )
 
 # Load pretrained model weights
-model.load_state_dict(torch.load("iot_transformer_pretrained_small.pt"))
+pretrained = torch.load("iot_transformer_pretrained_small.pt")
+missing_keys, unexpected_keys = model.load_state_dict(pretrained, strict=False)
+
+print("Missing keys:", missing_keys)
+print("Unexpected keys:", unexpected_keys)
 
 
 # Re-wrap the data using your custom Dataset class
