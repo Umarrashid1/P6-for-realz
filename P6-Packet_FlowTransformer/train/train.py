@@ -2,9 +2,9 @@ from torch.utils.data import DataLoader
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, f1_score  # 👈 added f1_score
 
-def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1e-3, device='cuda'):
+def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1e-5, device='cuda'):
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
@@ -35,6 +35,7 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
             all_labels.extend(labels.cpu().numpy())
 
         train_acc = accuracy_score(all_labels, all_preds)
+        train_f1 = f1_score(all_labels, all_preds, average='weighted')  # 👈 F1-score added
 
         # === Validation ===
         model.eval()
@@ -53,9 +54,12 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
                 val_labels.extend(labels.cpu().numpy())
 
         val_acc = accuracy_score(val_labels, val_preds)
+        val_f1 = f1_score(val_labels, val_preds, average='weighted')  # 👈 F1-score added
 
-        print(f"Epoch {epoch+1}/{epochs} - Loss: {total_loss:.4f} - Train Acc: {train_acc:.4f} - Val Acc: {val_acc:.4f}")
-        #torch.save(model.state_dict(), "iot_transformer_pretrained_small.pt")
+        print(f"Epoch {epoch+1}/{epochs} - Loss: {total_loss:.4f} - "
+              f"Train Acc: {train_acc:.4f} - Train F1: {train_f1:.4f} - "
+              f"Val Acc: {val_acc:.4f} - Val F1: {val_f1:.4f}")
+
         torch.save(model.state_dict(), "iot_transformer_complete.pt")
         print("Saved pretrained model for finetuning.")
 
@@ -80,4 +84,6 @@ def test_model(model, test_dataset, batch_size=64, device='cuda'):
             all_labels.extend(labels.cpu().numpy())
 
     acc = accuracy_score(all_labels, all_preds)
-    print(f"Test Accuracy: {acc:.4f}")
+    f1 = f1_score(all_labels, all_preds, average='weighted')  # 👈 F1-score added
+
+    print(f"Test Accuracy: {acc:.4f} - Test F1: {f1:.4f}")
