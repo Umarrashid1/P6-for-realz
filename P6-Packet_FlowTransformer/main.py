@@ -32,7 +32,9 @@ model = IoTTransformer(
     num_classes=8
 )
 
-post_model = torch.load("iot_transformer_pretrained_small.pt")
+# Load pretrained model weights
+model.load_state_dict(torch.load("iot_transformer_pretrained_small.pt"))
+
 
 # Re-wrap the data using your custom Dataset class
 full_dataset = IoTDataset(dataset_path)
@@ -47,13 +49,13 @@ print(f"Test size:  {len(test_dataset)}")
 
 
 # Train with training and validation sets
-train_model(post_model,
+train_model(model,
             train_dataset,
             val_dataset,
             epochs=5)
 
 # Test on the held-out test set
-test_model(post_model, test_dataset)
+test_model(model, test_dataset)
 
 
 
