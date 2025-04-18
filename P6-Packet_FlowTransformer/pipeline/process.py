@@ -13,7 +13,7 @@ def preprocess_all_in_memory(dataset_dir,
                              output_file,
                              categorical_columns,
                              numerical_columns,
-                             test_mode=False, rows_per_file=20000,
+                             test_mode=False, rows_per_file=2000,
                              missing_strategy="zero"):
     all_dfs = []
 
@@ -76,9 +76,9 @@ def preprocess_all_in_memory(dataset_dir,
         raise ValueError(f"Unknown missing_strategy: {missing_strategy}")
 
     # Normalize numerical
-    full_df[numerical_columns] = (full_df[numerical_columns] - full_df[numerical_columns].min()) / (
-        full_df[numerical_columns].max() - full_df[numerical_columns].min()
-    )
+    denominator = full_df[numerical_columns].max() - full_df[numerical_columns].min()
+    denominator = denominator.replace(0, 1)  # 👈 Avoid divide-by-zero
+    full_df[numerical_columns] = (full_df[numerical_columns] - full_df[numerical_columns].min()) / denominator
 
     # Encode categorical
     full_df[categorical_columns] = full_df[categorical_columns].astype("category").apply(lambda x: x.cat.codes)

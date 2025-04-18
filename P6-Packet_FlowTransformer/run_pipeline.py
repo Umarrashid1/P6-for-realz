@@ -2,7 +2,7 @@ from pipeline.process import preprocess_all_in_memory
 import pipeline.config as config
 # Set these to your actual dataset and output path
 DATASET_DIR = '../../dataset/roni'
-OUTPUT_FILE = '../../dataset/flow.pt'
+OUTPUT_FILE = '../../dataset/mini_flow.pt'
 
 categorical_columns = config.categorical_columns_flows
 numerical_columns = config.numerical_columns_flows
@@ -14,8 +14,7 @@ preprocess_all_in_memory(
     categorical_columns=categorical_columns,
     numerical_columns=numerical_columns,
     test_mode=True,
-
-    rows_per_file=20000,
+    rows_per_file=2000,
 )
 print("Pipeline completed successfully.")
 
