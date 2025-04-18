@@ -1,20 +1,17 @@
 import os
 import pandas as pd
 import numpy as np
-from .config import LABEL_MAPPING
 import torch
-
-# Define global variables for min/max of numerical columns
-global_min = pd.Series(dtype='float64')
-global_max = pd.Series(dtype='float64')
-
+from .config import LABEL_MAPPING
 
 def preprocess_all_in_memory(dataset_dir,
                              output_file,
                              categorical_columns,
                              numerical_columns,
-                             test_mode=False, rows_per_file=2000,
-                             missing_strategy="zero"):
+                             test_mode=False,
+                             rows_per_file=2000,
+                             missing_strategy="zero",
+                             standardize=False):
     all_dfs = []
 
     for root, _, files in os.walk(dataset_dir):
@@ -33,22 +30,26 @@ def preprocess_all_in_memory(dataset_dir,
                     print(f"[ERROR] Couldn't read {file_path}: {e}")
                     continue
 
+                # Ensure all required columns are present
                 missing_cols = [col for col in numerical_columns + categorical_columns if col not in df.columns]
                 if missing_cols:
                     print(f"[SKIP] Missing columns in {file_path}: {missing_cols}")
                     continue
 
                 df = df[numerical_columns + categorical_columns].copy()
+
+                # Force numerical columns to numeric types (crucial!)
+                for col in numerical_columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')  # Coerce bad strings to NaN
+
                 df["__label__"] = label
-                df["__source__"] = file_path  # For diagnostics
+                df["__source__"] = file_path  # for traceability
                 all_dfs.append(df)
 
     if not all_dfs:
         raise RuntimeError("No valid files found.")
 
     full_df = pd.concat(all_dfs, ignore_index=True)
-
-
 
     # Handle missing values
     if missing_strategy == "mean":
@@ -70,22 +71,34 @@ def preprocess_all_in_memory(dataset_dir,
     elif missing_strategy == "ffill":
         full_df.fillna(method='ffill', inplace=True)
 
-
-
     else:
         raise ValueError(f"Unknown missing_strategy: {missing_strategy}")
 
-    # Normalize numerical
-    denominator = full_df[numerical_columns].max() - full_df[numerical_columns].min()
-    denominator = denominator.replace(0, 1)  # 👈 Avoid divide-by-zero
-    full_df[numerical_columns] = (full_df[numerical_columns] - full_df[numerical_columns].min()) / denominator
+    # Final NaN check before scaling
+    assert not full_df[numerical_columns].isna().any().any(), "❌ NaNs still present after fillna!"
 
-    # Encode categorical
+    # Scale numeric columns
+    if standardize:
+        print("[INFO] Using standardization (mean=0, std=1)")
+        means = full_df[numerical_columns].mean()
+        stds = full_df[numerical_columns].std().replace(0, 1)
+        full_df[numerical_columns] = (full_df[numerical_columns] - means) / stds
+    else:
+        print("[INFO] Using min-max normalization")
+        denom = full_df[numerical_columns].max() - full_df[numerical_columns].min()
+        denom = denom.replace(0, 1)  # prevent divide-by-zero
+        full_df[numerical_columns] = (full_df[numerical_columns] - full_df[numerical_columns].min()) / denom
+
+    # Final NaN check before saving
+    if full_df[numerical_columns].isna().any().any():
+        raise ValueError("❌ NaNs detected in numerical data after scaling!")
+
+    # Encode categoricals
     full_df[categorical_columns] = full_df[categorical_columns].astype("category").apply(lambda x: x.cat.codes)
 
     # Print label distribution
-    label_counts = full_df["__label__"].value_counts().sort_index()
     print("\n[INFO] Label distribution:")
+    label_counts = full_df["__label__"].value_counts().sort_index()
     for label_id, count in label_counts.items():
         label_name = [k for k, v in LABEL_MAPPING.items() if v == label_id]
         label_str = label_name[0] if label_name else str(label_id)
@@ -96,25 +109,21 @@ def preprocess_all_in_memory(dataset_dir,
     categorical_tensor = torch.tensor(full_df[categorical_columns].values, dtype=torch.int64)
     label_tensor = torch.tensor(full_df["__label__"].values, dtype=torch.int64)
 
-    # Save
     torch.save({
         "numerical": numerical_tensor,
         "categorical": categorical_tensor,
         "label": label_tensor
     }, output_file)
 
-    print(f"\n[INFO] Preprocessing complete — saved {len(full_df)} rows to {output_file}")
+    print(f"\n✅ Preprocessing complete — saved {len(full_df)} rows to {output_file}")
 
 
 def find_label_from_path(file_path):
-    # Walk up the folder tree to find a matching label from LABEL_MAPPING
-    # Change to something sane
     current_path = os.path.dirname(file_path)
-    while current_path != os.path.dirname(current_path):  # Stop at filesystem root
+    while current_path != os.path.dirname(current_path):
         folder_name = os.path.basename(current_path)
         for key in LABEL_MAPPING:
             if key.lower() in folder_name.lower():
                 return LABEL_MAPPING[key]
         current_path = os.path.dirname(current_path)
     return -1
-
