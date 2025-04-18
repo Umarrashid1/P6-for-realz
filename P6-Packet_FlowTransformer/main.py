@@ -2,7 +2,7 @@ from pipeline.iot_dataset import IoTDataset
 from models.transformer import IoTTransformer
 from train.train import train_model, test_model
 import pipeline.config as config
-from torch.utils.data import Subset, random_split
+from torch.utils.data import random_split
 import torch
 
 
@@ -41,14 +41,13 @@ def load_partial_weights_skip_mlp(model, pretrained_path):
         print(f"   - {k}: checkpoint shape {shape_pre} vs. model shape {shape_cur}")
 
 
-# === Mini Subset for Debugging ===
-dataset_path = "../../dataset/flow.pt"
+# === Full Dataset ===
+dataset_path = "../../dataset/mini_flow.pt"
 raw_data = torch.load(dataset_path)
 print("Dataset loaded")
 
-# Mini subset
-subset_size = 1000
-categorical_tensor = raw_data["categorical"][:subset_size]
+# Extract full cardinalities for the whole dataset
+categorical_tensor = raw_data["categorical"]
 cat_cardinalities = [int(torch.max(categorical_tensor[:, i]) + 1) for i in range(categorical_tensor.shape[1])]
 
 # Init model with 2-layer Transformer
@@ -56,15 +55,14 @@ model = IoTTransformer(
     num_numerical=len(config.numerical_columns_flows),
     cat_cardinalities=cat_cardinalities,
     num_classes=8,
-    num_layers=2  # ✅ 2 transformer layers only
+    num_layers=2
 )
 
 # Load partial weights (skip MLP)
 load_partial_weights_skip_mlp(model, "iot_transformer_pretrained_small.pt")
 
-# Dataset subset
+# Load full dataset (no slicing!)
 full_dataset = IoTDataset(dataset_path)
-full_dataset = Subset(full_dataset, range(subset_size))  # ✅ Use small slice
 
 # Split into train/val/test
 train_dataset, val_dataset, test_dataset = split_dataset_three_ways(full_dataset, val_ratio=0.1, test_ratio=0.1)
@@ -73,8 +71,8 @@ print(f"\nTrain size: {len(train_dataset)}")
 print(f"Val size:   {len(val_dataset)}")
 print(f"Test size:  {len(test_dataset)}")
 
-# Train (use lower LR for safety)
-train_model(model, train_dataset, val_dataset, epochs=3, lr=1e-4)
+# Train on full dataset
+train_model(model, train_dataset, val_dataset, epochs=5, lr=1e-4)
 
-# Test
+# Final test
 test_model(model, test_dataset)
