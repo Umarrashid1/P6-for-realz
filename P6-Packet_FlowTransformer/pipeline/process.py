@@ -75,7 +75,9 @@ def preprocess_all_in_memory(dataset_dir,
         raise ValueError(f"Unknown missing_strategy: {missing_strategy}")
 
     # Final NaN check before scaling
-    assert not full_df[numerical_columns].isna().any().any(), "❌ NaNs still present after fillna!"
+
+    if full_df[numerical_columns].isna().any().any():
+        raise ValueError("❌ NaNs still present after fillna!")
 
     # Scale numeric columns
     if standardize:
