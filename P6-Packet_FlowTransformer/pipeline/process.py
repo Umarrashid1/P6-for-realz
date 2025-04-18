@@ -95,6 +95,8 @@ def preprocess_all_in_memory(dataset_dir,
         full_df[numerical_columns] = (full_df[numerical_columns] - min_vals) / denom
 
     # Final NaN check before saving
+    print("[DEBUG] Columns with NaNs after scaling:")
+    print(full_df[numerical_columns].isna().sum()[full_df[numerical_columns].isna().sum() > 0])
     if full_df[numerical_columns].isna().any().any():
         raise ValueError("❌ NaNs detected in numerical data after scaling!")
 
