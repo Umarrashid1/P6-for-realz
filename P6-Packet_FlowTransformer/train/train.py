@@ -34,8 +34,20 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
 
             optimizer.zero_grad()
             outputs = model(numerical, categorical)
+            # Sanity check: are there NaNs/Infs in model output (logits)?
+            if torch.isnan(outputs).any() or torch.isinf(outputs).any():
+                print("❌ Detected NaNs or Infs in model output!")
+                print("Logits min:", outputs.min().item())
+                print("Logits max:", outputs.max().item())
+                print("Sample logits:", outputs[0])
+
+
             loss = criterion(outputs, labels)
             loss.backward()
+
+            for name, param in model.named_parameters():
+                if param.grad is not None and torch.isnan(param.grad).any():
+                    print(f"🚨 NaN in gradient of {name}")
 
             # ✅ Gradient clipping to avoid exploding gradients
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
