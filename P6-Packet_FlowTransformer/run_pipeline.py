@@ -15,6 +15,7 @@ preprocess_all_in_memory(
     numerical_columns=numerical_columns,
     test_mode=True,
     rows_per_file=2000,
+    standardize = True
 )
 print("Pipeline completed successfully.")
 
