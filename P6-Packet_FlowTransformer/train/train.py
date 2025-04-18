@@ -13,45 +13,33 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
     criterion = nn.CrossEntropyLoss()
 
     for epoch in range(epochs):
-        # === Training ===
         model.train()
         total_loss = 0
         all_preds, all_labels = [], []
 
         for batch_idx, batch in enumerate(train_loader):
+            # 🔍 Inspect & fix batch only on the first iteration
+            if epoch == 0 and batch_idx == 0:
+                batch = inspect_and_fix_batch(batch, model, device=device, fix=True)
+
             numerical = batch['numerical'].to(device)
             categorical = batch['categorical'].to(device)
             labels = batch['label'].to(device)
 
-            # ✅ Only check the first batch for debugging
-            if epoch == 0 and batch_idx == 0:
-                print("\n📊 Debug: First training batch stats")
-                print("NaNs in numerical:", torch.isnan(numerical).sum().item())
-                print("Infs in numerical:", torch.isinf(numerical).sum().item())
-                print("Numerical max:", numerical.max().item())
-                print("Numerical min:", numerical.min().item())
-                print("Unique labels:", torch.unique(labels))
-
             optimizer.zero_grad()
             outputs = model(numerical, categorical)
-            # Sanity check: are there NaNs/Infs in model output (logits)?
+
+            # Check for NaNs/Infs in model output
             if torch.isnan(outputs).any() or torch.isinf(outputs).any():
                 print("❌ Detected NaNs or Infs in model output!")
                 print("Logits min:", outputs.min().item())
                 print("Logits max:", outputs.max().item())
                 print("Sample logits:", outputs[0])
-
+                return  # ⛔ Stop training if outputs are broken
 
             loss = criterion(outputs, labels)
             loss.backward()
-
-            for name, param in model.named_parameters():
-                if param.grad is not None and torch.isnan(param.grad).any():
-                    print(f"🚨 NaN in gradient of {name}")
-
-            # ✅ Gradient clipping to avoid exploding gradients
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-
             optimizer.step()
 
             total_loss += loss.item()
@@ -112,3 +100,44 @@ def test_model(model, test_dataset, batch_size=64, device='cuda'):
     f1 = f1_score(all_labels, all_preds, average='weighted')  # 👈 F1-score added
 
     print(f"Test Accuracy: {acc:.4f} - Test F1: {f1:.4f}")
+
+
+
+def inspect_and_fix_batch(batch, model, device='cuda', fix=True):
+    numerical = batch['numerical'].to(device)
+    categorical = batch['categorical'].to(device)
+    labels = batch['label'].to(device)
+
+    print("\n🔎 Inspecting batch:")
+
+    # === Check numerical values ===
+    print("→ Numerical:")
+    print("  NaNs:", torch.isnan(numerical).sum().item())
+    print("  Infs:", torch.isinf(numerical).sum().item())
+    print("  Min value:", numerical.min().item())
+    print("  Max value:", numerical.max().item())
+    print("  Row max values (first 5):", numerical.max(dim=1).values[:5])
+
+    # === Check categorical indices ===
+    print("→ Categorical:")
+    num_cat = categorical.shape[1]
+    for i in range(num_cat):
+        max_idx = categorical[:, i].max().item()
+        min_idx = categorical[:, i].min().item()
+        emb_size = model.cat_embeddings[i].num_embeddings if hasattr(model, 'cat_embeddings') else '?'
+        print(f"  Cat[{i}] min={min_idx} max={max_idx} | embedding size={emb_size}")
+
+        if fix and max_idx >= emb_size:
+            print(f"    ⚠️ Invalid index in Cat[{i}] — fixing by clamping.")
+            categorical[:, i] = categorical[:, i].clamp(0, emb_size - 1)
+
+        if fix and min_idx < 0:
+            print(f"    ⚠️ Negative index in Cat[{i}] — fixing to 0.")
+            categorical[:, i] = torch.where(categorical[:, i] < 0, torch.zeros_like(categorical[:, i]), categorical[:, i])
+
+    return {
+        'numerical': numerical,
+        'categorical': categorical,
+        'label': labels
+    }
+
