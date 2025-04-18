@@ -18,15 +18,28 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
         total_loss = 0
         all_preds, all_labels = [], []
 
-        for batch in train_loader:
+        for batch_idx, batch in enumerate(train_loader):
             numerical = batch['numerical'].to(device)
             categorical = batch['categorical'].to(device)
             labels = batch['label'].to(device)
+
+            # ✅ Only check the first batch for debugging
+            if epoch == 0 and batch_idx == 0:
+                print("\n📊 Debug: First training batch stats")
+                print("NaNs in numerical:", torch.isnan(numerical).sum().item())
+                print("Infs in numerical:", torch.isinf(numerical).sum().item())
+                print("Numerical max:", numerical.max().item())
+                print("Numerical min:", numerical.min().item())
+                print("Unique labels:", torch.unique(labels))
 
             optimizer.zero_grad()
             outputs = model(numerical, categorical)
             loss = criterion(outputs, labels)
             loss.backward()
+
+            # ✅ Gradient clipping to avoid exploding gradients
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
             optimizer.step()
 
             total_loss += loss.item()
@@ -35,7 +48,7 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
             all_labels.extend(labels.cpu().numpy())
 
         train_acc = accuracy_score(all_labels, all_preds)
-        train_f1 = f1_score(all_labels, all_preds, average='weighted')  # 👈 F1-score added
+        train_f1 = f1_score(all_labels, all_preds, average='weighted')
 
         # === Validation ===
         model.eval()
@@ -54,7 +67,7 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
                 val_labels.extend(labels.cpu().numpy())
 
         val_acc = accuracy_score(val_labels, val_preds)
-        val_f1 = f1_score(val_labels, val_preds, average='weighted')  # 👈 F1-score added
+        val_f1 = f1_score(val_labels, val_preds, average='weighted')
 
         print(f"Epoch {epoch+1}/{epochs} - Loss: {total_loss:.4f} - "
               f"Train Acc: {train_acc:.4f} - Train F1: {train_f1:.4f} - "
