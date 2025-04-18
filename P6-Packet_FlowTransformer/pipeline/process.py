@@ -38,18 +38,26 @@ def preprocess_all_in_memory(dataset_dir,
 
                 df = df[numerical_columns + categorical_columns].copy()
 
-                # Force numerical columns to numeric types (crucial!)
+                # Convert numeric columns explicitly
                 for col in numerical_columns:
-                    df[col] = pd.to_numeric(df[col], errors='coerce')  # Coerce bad strings to NaN
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
 
                 df["__label__"] = label
-                df["__source__"] = file_path  # for traceability
+                df["__source__"] = file_path
                 all_dfs.append(df)
 
     if not all_dfs:
         raise RuntimeError("No valid files found.")
 
     full_df = pd.concat(all_dfs, ignore_index=True)
+
+    # Replace inf values with NaN (not handled by fillna)
+    full_df[numerical_columns] = full_df[numerical_columns].replace([np.inf, -np.inf], np.nan)
+
+    # Debug: check for all-NaN numerical columns
+    for col in numerical_columns:
+        if full_df[col].isna().all():
+            print(f"[WARNING] All values are NaN in column: {col}")
 
     # Handle missing values
     if missing_strategy == "mean":
@@ -65,7 +73,7 @@ def preprocess_all_in_memory(dataset_dir,
             full_df[col].fillna(full_df[col].mode().iloc[0], inplace=True)
 
     elif missing_strategy == "zero":
-        full_df[numerical_columns] = full_df[numerical_columns].fillna(1)
+        full_df[numerical_columns] = full_df[numerical_columns].fillna(0)
         full_df[categorical_columns] = full_df[categorical_columns].fillna("unknown")
 
     elif missing_strategy == "ffill":
@@ -75,8 +83,9 @@ def preprocess_all_in_memory(dataset_dir,
         raise ValueError(f"Unknown missing_strategy: {missing_strategy}")
 
     # Final NaN check before scaling
-
     if full_df[numerical_columns].isna().any().any():
+        print("[DEBUG] Columns with NaNs before scaling:")
+        print(full_df[numerical_columns].isna().sum()[full_df[numerical_columns].isna().sum() > 0])
         raise ValueError("❌ NaNs still present after fillna!")
 
     # Scale numeric columns
@@ -84,20 +93,27 @@ def preprocess_all_in_memory(dataset_dir,
         print("[INFO] Using standardization (mean=0, std=1)")
         means = full_df[numerical_columns].mean()
         stds = full_df[numerical_columns].std()
-        stds = stds.replace(0, 1).fillna(1)  # ✅ prevent divide-by-zero or NaN
+
+        if means.isna().any() or stds.isna().any():
+            print("[DEBUG] NaNs in mean or std detected before scaling")
+            print("Means with NaNs:\n", means[means.isna()])
+            print("Stds with NaNs:\n", stds[stds.isna()])
+            raise ValueError("❌ NaNs in mean or std values before scaling")
+
+        stds = stds.replace(0, 1).fillna(1)
         full_df[numerical_columns] = (full_df[numerical_columns] - means) / stds
     else:
         print("[INFO] Using min-max normalization")
         min_vals = full_df[numerical_columns].min()
         max_vals = full_df[numerical_columns].max()
         denom = max_vals - min_vals
-        denom = denom.replace(0, 1).fillna(1)  # ✅ prevent divide-by-zero or NaN
+        denom = denom.replace(0, 1).fillna(1)
         full_df[numerical_columns] = (full_df[numerical_columns] - min_vals) / denom
 
     # Final NaN check before saving
-    print("[DEBUG] Columns with NaNs after scaling:")
-    print(full_df[numerical_columns].isna().sum()[full_df[numerical_columns].isna().sum() > 0])
     if full_df[numerical_columns].isna().any().any():
+        print("[DEBUG] Columns with NaNs after scaling:")
+        print(full_df[numerical_columns].isna().sum()[full_df[numerical_columns].isna().sum() > 0])
         raise ValueError("❌ NaNs detected in numerical data after scaling!")
 
     # Encode categoricals
