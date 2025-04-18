@@ -2,8 +2,12 @@ import torch
 import torch.nn as nn
 
 class IoTTransformer(nn.Module):
-    def __init__(self, num_numerical, cat_cardinalities, num_classes, embed_dim=32, num_heads=4, num_layers=2, dropout=0.1):
+    def __init__(self, num_numerical, cat_cardinalities, num_classes,
+                 embed_dim=32, num_heads=4, num_layers=2, dropout=0.1):
         super().__init__()
+
+        self.output_dim = num_classes  # 👈 Add this line for label validation
+
         self.cat_embeddings = nn.ModuleList([
             nn.Embedding(num_embeddings=card, embedding_dim=embed_dim)
             for card in cat_cardinalities
@@ -11,7 +15,12 @@ class IoTTransformer(nn.Module):
 
         self.position_enc = nn.Parameter(torch.randn(len(cat_cardinalities), embed_dim))
 
-        encoder_layer = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=num_heads, dropout=dropout, batch_first=True)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=embed_dim,
+            nhead=num_heads,
+            dropout=dropout,
+            batch_first=True
+        )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
         self.mlp = nn.Sequential(
@@ -30,7 +39,6 @@ class IoTTransformer(nn.Module):
             # 💥 Debug assertions (fail fast)
             if torch.any(col < 0):
                 raise ValueError(f"Negative index in categorical[:, {i}] — likely from .cat.codes")
-
             if torch.any(col >= embed.num_embeddings):
                 raise ValueError(
                     f"Index out of bounds in categorical[:, {i}]: max={col.max().item()}, "
