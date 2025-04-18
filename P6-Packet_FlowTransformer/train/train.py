@@ -5,6 +5,10 @@ import torch.optim as optim
 from sklearn.metrics import accuracy_score, f1_score  # 👈 added f1_score
 
 def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1e-5, device='cuda'):
+    from torch.utils.data import DataLoader
+    import torch.nn.functional as F
+    import numpy as np
+
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
@@ -12,33 +16,66 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
     optimizer = optim.Adam(model.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
 
+    torch.manual_seed(42)
+    torch.cuda.manual_seed_all(42)
+
+    # 🔍 Check for NaNs in model params at init
+    for name, param in model.named_parameters():
+        if param.requires_grad and torch.isnan(param).any():
+            print(f"❌ NaNs found in model parameter at init: {name}")
+            return
+
     for epoch in range(epochs):
         model.train()
         total_loss = 0
         all_preds, all_labels = [], []
 
         for batch_idx, batch in enumerate(train_loader):
-            # 🔍 Inspect & fix batch only on the first iteration
-            if epoch == 0 and batch_idx == 0:
-                batch = inspect_and_fix_batch(batch, model, device=device, fix=True)
+            # 🔍 Always inspect batch — not just the first
+            batch = inspect_and_fix_batch(batch, model, device=device, fix=True)
 
             numerical = batch['numerical'].to(device)
             categorical = batch['categorical'].to(device)
             labels = batch['label'].to(device)
 
+            # 🔍 Sanity check: input types and shapes
+            if not torch.is_floating_point(numerical):
+                print("❌ Numerical input is not float!")
+            if labels.dtype != torch.long:
+                print(f"❌ Labels are not long! Got: {labels.dtype}")
+                return
+            if labels.min() < 0 or labels.max() >= model.output_dim:
+                print(f"❌ Label value out of range! Min: {labels.min().item()}, Max: {labels.max().item()}")
+                return
+
+            # 🔍 Check stats of numerical data
+            print(f"Numerical - mean: {numerical.mean().item():.4f}, std: {numerical.std().item():.4f}, max: {numerical.max().item():.4f}")
+
             optimizer.zero_grad()
             outputs = model(numerical, categorical)
 
-            # Check for NaNs/Infs in model output
+            # 🔍 Output shape and range check
+            print(f"Model output shape: {outputs.shape}, Labels shape: {labels.shape}")
             if torch.isnan(outputs).any() or torch.isinf(outputs).any():
                 print("❌ Detected NaNs or Infs in model output!")
                 print("Logits min:", outputs.min().item())
                 print("Logits max:", outputs.max().item())
                 print("Sample logits:", outputs[0])
-                return  # ⛔ Stop training if outputs are broken
+                return  # Stop training if outputs are broken
 
             loss = criterion(outputs, labels)
+            if torch.isnan(loss) or torch.isinf(loss):
+                print("❌ NaN or Inf in loss computation!")
+                return
+
             loss.backward()
+
+            # 🔍 Check gradients for NaNs before step
+            for name, param in model.named_parameters():
+                if param.grad is not None and torch.isnan(param.grad).any():
+                    print(f"🚨 NaN in gradient of {name}")
+                    return
+
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
@@ -74,7 +111,7 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
               f"Val Acc: {val_acc:.4f} - Val F1: {val_f1:.4f}")
 
         torch.save(model.state_dict(), "iot_transformer_complete.pt")
-        print("Saved pretrained model for finetuning.")
+        print("✅ Saved pretrained model for finetuning.")
 
 
 def test_model(model, test_dataset, batch_size=64, device='cuda'):
