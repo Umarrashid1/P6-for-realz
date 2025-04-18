@@ -65,7 +65,7 @@ def preprocess_all_in_memory(dataset_dir,
             full_df[col].fillna(full_df[col].mode().iloc[0], inplace=True)
 
     elif missing_strategy == "zero":
-        full_df[numerical_columns] = full_df[numerical_columns].fillna(0)
+        full_df[numerical_columns] = full_df[numerical_columns].fillna(1)
         full_df[categorical_columns] = full_df[categorical_columns].fillna("unknown")
 
     elif missing_strategy == "ffill":
@@ -83,13 +83,16 @@ def preprocess_all_in_memory(dataset_dir,
     if standardize:
         print("[INFO] Using standardization (mean=0, std=1)")
         means = full_df[numerical_columns].mean()
-        stds = full_df[numerical_columns].std().replace(0, 1)
+        stds = full_df[numerical_columns].std()
+        stds = stds.replace(0, 1).fillna(1)  # ✅ prevent divide-by-zero or NaN
         full_df[numerical_columns] = (full_df[numerical_columns] - means) / stds
     else:
         print("[INFO] Using min-max normalization")
-        denom = full_df[numerical_columns].max() - full_df[numerical_columns].min()
-        denom = denom.replace(0, 1)  # prevent divide-by-zero
-        full_df[numerical_columns] = (full_df[numerical_columns] - full_df[numerical_columns].min()) / denom
+        min_vals = full_df[numerical_columns].min()
+        max_vals = full_df[numerical_columns].max()
+        denom = max_vals - min_vals
+        denom = denom.replace(0, 1).fillna(1)  # ✅ prevent divide-by-zero or NaN
+        full_df[numerical_columns] = (full_df[numerical_columns] - min_vals) / denom
 
     # Final NaN check before saving
     if full_df[numerical_columns].isna().any().any():
