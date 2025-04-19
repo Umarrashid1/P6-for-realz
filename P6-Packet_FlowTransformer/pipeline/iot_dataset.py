@@ -10,7 +10,7 @@ class IoTSequenceDataset(Dataset):
         self.labels = data["label"]            # shape: [N_flows]
         self.max_seq_len = max_seq_len
 
-        # Optional: pad/truncate to uniform length
+        # pad/truncate to uniform length
         self.padded_seqs = []
         for seq in self.packet_seqs:
             if len(seq) < max_seq_len:

@@ -15,7 +15,7 @@ class IoTTransformer(nn.Module):
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
-        # For flow-level prediction (i.e., after sequence)
+        # For flow-level prediction
         self.classifier = nn.Sequential(
             nn.Linear(embed_dim, 128),
             nn.ReLU(),

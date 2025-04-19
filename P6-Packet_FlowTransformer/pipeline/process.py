@@ -93,18 +93,32 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
 
             for _, flow_df in flow_groups:
                 flow_features = flow_df[numerical_columns + categorical_columns].values
-                num_chunks = (len(flow_features) + max_seq_len - 1) // max_seq_len
+                flow_len = len(flow_features)
 
-                print(f"Flow had {len(flow_features)} packets, split into {num_chunks} chunks.")
+                # Sliding window to create overlapping chunks
+                window_size = max_seq_len
+                stride = window_size // 4  # 1/4 overlap
+                num_chunks = (flow_len - window_size) // stride + 1
 
+                print(f"[INFO] Processing flow from file: {file_path} with label: {label}")
+                print(f"Flow had {flow_len} packets, split into {num_chunks} chunks using sliding window.")
+
+                # Create chunks of packet sequences
                 for i in range(num_chunks):
-                    chunk = flow_features[i * max_seq_len: (i + 1) * max_seq_len]
+                    # Calculate start and end indices for the sliding window
+                    start_idx = i * stride
+                    end_idx = start_idx + window_size
+                    chunk = flow_features[start_idx:end_idx]
+
+                    # Skip empty chunks
                     if len(chunk) == 0:
                         continue
 
+                    # Convert chunk to tensor
                     pkt_tensor = torch.tensor(chunk, dtype=torch.float32)
-                    flow_len = len(chunk)
 
+                    # Attention mask creation
+                    flow_len = len(chunk)
                     if flow_len < max_seq_len:
                         attention_mask = torch.cat([torch.ones(flow_len), torch.zeros(max_seq_len - flow_len)])
                         pad = torch.zeros(max_seq_len - flow_len, pkt_tensor.shape[1])
@@ -113,16 +127,20 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
                         pkt_tensor = pkt_tensor[:max_seq_len]
                         attention_mask = torch.ones(max_seq_len)
 
+                    # Ensure the attention mask is the same length as the padded sequence
                     all_packet_seqs.append(pkt_tensor)
                     all_labels.append(label)
                     attention_masks.append(attention_mask)
 
+    # Check if any flows were processed
     if not all_packet_seqs:
         raise RuntimeError("No flows found.")
 
+    # Stack all packet sequences and convert to tensors
     packet_tensor = torch.stack(all_packet_seqs)  # [N, T, F]
     label_tensor = torch.tensor(all_labels, dtype=torch.long)
     attention_mask_tensor = torch.stack(attention_masks)  # [N, T]
+
 
     torch.save({
         "packet_seq": packet_tensor,  # [N, T, F]
