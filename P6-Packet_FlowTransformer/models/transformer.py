@@ -23,15 +23,21 @@ class IoTTransformer(nn.Module):
             nn.Linear(128, num_classes)
         )
 
-    def forward(self, packet_seq):
+    def forward(self, packet_seq, attention_mask=None):
         # packet_seq: [B, T, F]
         x = self.packet_proj(packet_seq)  # → [B, T, E]
-        x = x + self.position_encoding[:x.size(1)].unsqueeze(0)  # → [1, T, E]
+        x = x + self.position_encoding[:x.size(1)].unsqueeze(0)  # [1, T, E] → broadcast
 
-        x = self.transformer(x)  # → [B, T, E]
+        if attention_mask is not None:
+            # Transformer expects mask shape [B, T] → convert to [B, 1, 1, T] or [B, T] with batch_first=True
+            # In PyTorch, True = keep, False = mask
+            attn_mask = ~attention_mask.bool()  # invert: pad=1 → False, valid=1 → True
+        else:
+            attn_mask = None
 
-        # Option 1: Mean pooling (for flow-level classification)
-        x = x.mean(dim=1)  # [B, E]
+        x = self.transformer(x, src_key_padding_mask=attn_mask)  # [B, T, E]
+        x = x.mean(dim=1)  # mean pooling over T
 
-        return self.classifier(x)  # → [B, num_classes]
+        return self.classifier(x)  # [B, num_classes]
+
 

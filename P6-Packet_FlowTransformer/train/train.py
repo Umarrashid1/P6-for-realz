@@ -14,7 +14,7 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
     criterion = nn.CrossEntropyLoss()
 
     for epoch in range(epochs):
-        # === Training ===
+        # Training
         model.train()
         total_loss = 0
         all_preds, all_labels = [], []
@@ -24,7 +24,9 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
             labels = batch['label'].to(device)
 
             optimizer.zero_grad()
-            outputs = model(packet_seq)
+            attention_mask = batch['attention_mask'].to(device)
+            outputs = model(packet_seq, attention_mask=attention_mask)
+
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
@@ -38,7 +40,7 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
 
         train_acc = accuracy_score(all_labels, all_preds)
 
-        # === Validation ===
+        # Validation
         model.eval()
         val_preds, val_labels = [], []
 
@@ -48,7 +50,8 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
                 labels = batch['label'].to(device)
 
                 packet_seq = batch['packet_seq'].to(device)
-                outputs = model(packet_seq)
+                attention_mask = batch['attention_mask'].to(device)
+                outputs = model(packet_seq, attention_mask=attention_mask)
 
                 preds = torch.argmax(outputs, dim=1)
 

@@ -7,6 +7,7 @@ from .config import categorical_columns, numerical_columns, LABEL_MAPPING
 def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, rows_per_file=20000, missing_strategy="zero", max_seq_len=64):
     all_packet_seqs = []
     all_labels = []
+    attention_masks = []
 
     for root, _, files in os.walk(dataset_dir):
         for file in files:
@@ -94,27 +95,33 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
                 if len(flow_features) == 0:
                     continue
 
+                flow_len = len(flow_features)
                 pkt_tensor = torch.tensor(flow_features, dtype=torch.float32)
 
-                # Pad or truncate
-                if len(pkt_tensor) < max_seq_len:
-                    pad = torch.zeros(max_seq_len - len(pkt_tensor), pkt_tensor.shape[1])
+                # Create attention mask before padding
+                if flow_len < max_seq_len:
+                    attention_mask = torch.cat([torch.ones(flow_len), torch.zeros(max_seq_len - flow_len)])
+                    pad = torch.zeros(max_seq_len - flow_len, pkt_tensor.shape[1])
                     pkt_tensor = torch.cat([pkt_tensor, pad], dim=0)
                 else:
                     pkt_tensor = pkt_tensor[:max_seq_len]
+                    attention_mask = torch.ones(max_seq_len)
 
                 all_packet_seqs.append(pkt_tensor)
                 all_labels.append(label)
+                attention_masks.append(attention_mask)
 
     if not all_packet_seqs:
         raise RuntimeError("No flows found.")
 
     packet_tensor = torch.stack(all_packet_seqs)  # [N, T, F]
     label_tensor = torch.tensor(all_labels, dtype=torch.long)
+    attention_mask_tensor = torch.stack(attention_masks)  # [N, T]
 
     torch.save({
-        "packet_seq": packet_tensor,
-        "label": label_tensor
+        "packet_seq": packet_tensor,  # [N, T, F]
+        "label": label_tensor,  # [N]
+        "attention_mask": attention_mask_tensor  # [N, T]
     }, output_file)
 
     print(f"\n[INFO] Preprocessing complete — saved {len(packet_tensor)} flows to {output_file}")
