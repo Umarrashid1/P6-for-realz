@@ -26,15 +26,34 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
                 continue
 
             missing_cols = [col for col in numerical_columns + categorical_columns if col not in df.columns]
-            required_flow_cols = ['Src IP', 'Dst IP', 'Src Port', 'Dst Port', 'Protocol']
+            required_flow_cols = ['src_ip', 'dst_ip', 'src_port', 'dst_port']
+
+            # Check for the presence of required columns and protocol
             if missing_cols or any(c not in df.columns for c in required_flow_cols):
                 print(f"[SKIP] Missing columns in {file_path}: {missing_cols}")
                 continue
 
-            # Subset dataframe
-            df = df[numerical_columns + categorical_columns + required_flow_cols].copy()
+            # Infer protocol based on l4_tcp / l4_udp
+            if 'l4_tcp' in df.columns and 'l4_udp' in df.columns:
+                def infer_protocol(row):
+                    if row['l4_tcp'] == 1:
+                        return 'TCP'
+                    elif row['l4_udp'] == 1:
+                        return 'UDP'
+                    else:
+                        return 'OTHER'
 
-            # === Handle missing values ===
+                # Add the 'protocol' column to the DataFrame
+                df['protocol'] = df.apply(infer_protocol, axis=1)
+            else:
+                print(f"[SKIP] Missing 'l4_tcp' or 'l4_udp' in {file_path}")
+                continue
+
+            # Subset dataframe
+            df = df[numerical_columns + categorical_columns + ['src_ip', 'dst_ip', 'src_port', 'dst_port',
+                                                               'protocol']].copy()
+
+            # Handle missing values
             if missing_strategy == "mean":
                 for col in numerical_columns:
                     df[col].fillna(df[col].mean(), inplace=True)
@@ -66,7 +85,7 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
             df[categorical_columns] = df[categorical_columns].astype("category").apply(lambda x: x.cat.codes)
 
             # Group packets into flows (5-tuple)
-            group_keys = ['Src IP', 'Dst IP', 'Src Port', 'Dst Port', 'Protocol']
+            group_keys = ['src_ip', 'dst_ip', 'src_port', 'dst_port', 'protocol']
             flow_groups = df.groupby(group_keys)
 
             for _, flow_df in flow_groups:
