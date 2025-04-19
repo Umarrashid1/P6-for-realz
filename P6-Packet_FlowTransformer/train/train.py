@@ -19,20 +19,16 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
         all_preds, all_labels = [], []
 
         for batch in train_loader:
-            numerical = batch['numerical'].to(device)
-            categorical = batch['categorical'].to(device)
+            packet_seq = batch['packet_seq'].to(device)  # [B, T, F]
             labels = batch['label'].to(device)
 
             optimizer.zero_grad()
-            outputs = model(numerical, categorical)
+            outputs = model(packet_seq)
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
-
             total_loss += loss.item()
-            preds = torch.argmax(outputs, dim=1)
-            all_preds.extend(preds.cpu().numpy())
-            all_labels.extend(labels.cpu().numpy())
+
 
         train_acc = accuracy_score(all_labels, all_preds)
 
