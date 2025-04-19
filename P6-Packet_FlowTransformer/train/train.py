@@ -1,4 +1,4 @@
-# train.py
+# train/train.py
 from torch.utils.data import DataLoader
 import torch
 import torch.nn as nn
@@ -77,7 +77,7 @@ def test_model(model, test_dataset, batch_size=64, device='cuda'):
             packet_seq = batch['packet_seq'].to(device)
             labels = batch['label'].to(device)
 
-            outputs = model(packet_seq)
+            outputs = model(packet_seq, attention_mask=batch['attention_mask'].to(device))
             preds = torch.argmax(outputs, dim=1)
 
             all_preds.extend(preds.cpu().numpy())

@@ -1,3 +1,4 @@
+# pipeline/process.py
 import os
 import pandas as pd
 import numpy as np
@@ -8,6 +9,7 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
     all_packet_seqs = []
     all_labels = []
     attention_masks = []
+
 
     for root, _, files in os.walk(dataset_dir):
         for file in files:
@@ -91,25 +93,29 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
 
             for _, flow_df in flow_groups:
                 flow_features = flow_df[numerical_columns + categorical_columns].values
+                num_chunks = (len(flow_features) + max_seq_len - 1) // max_seq_len
 
-                if len(flow_features) == 0:
-                    continue
+                print(f"Flow had {len(flow_features)} packets, split into {num_chunks} chunks.")
 
-                flow_len = len(flow_features)
-                pkt_tensor = torch.tensor(flow_features, dtype=torch.float32)
+                for i in range(num_chunks):
+                    chunk = flow_features[i * max_seq_len: (i + 1) * max_seq_len]
+                    if len(chunk) == 0:
+                        continue
 
-                # Create attention mask before padding
-                if flow_len < max_seq_len:
-                    attention_mask = torch.cat([torch.ones(flow_len), torch.zeros(max_seq_len - flow_len)])
-                    pad = torch.zeros(max_seq_len - flow_len, pkt_tensor.shape[1])
-                    pkt_tensor = torch.cat([pkt_tensor, pad], dim=0)
-                else:
-                    pkt_tensor = pkt_tensor[:max_seq_len]
-                    attention_mask = torch.ones(max_seq_len)
+                    pkt_tensor = torch.tensor(chunk, dtype=torch.float32)
+                    flow_len = len(chunk)
 
-                all_packet_seqs.append(pkt_tensor)
-                all_labels.append(label)
-                attention_masks.append(attention_mask)
+                    if flow_len < max_seq_len:
+                        attention_mask = torch.cat([torch.ones(flow_len), torch.zeros(max_seq_len - flow_len)])
+                        pad = torch.zeros(max_seq_len - flow_len, pkt_tensor.shape[1])
+                        pkt_tensor = torch.cat([pkt_tensor, pad], dim=0)
+                    else:
+                        pkt_tensor = pkt_tensor[:max_seq_len]
+                        attention_mask = torch.ones(max_seq_len)
+
+                    all_packet_seqs.append(pkt_tensor)
+                    all_labels.append(label)
+                    attention_masks.append(attention_mask)
 
     if not all_packet_seqs:
         raise RuntimeError("No flows found.")
