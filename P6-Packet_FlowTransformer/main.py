@@ -1,4 +1,4 @@
-from pipeline.iot_dataset import IoTDataset
+from pipeline.iot_dataset import IoTSequenceDataset
 from models.transformer import IoTTransformer
 from train.train import train_model, test_model
 from pipeline.config import numerical_columns, categorical_columns
@@ -23,15 +23,21 @@ print("Dataset loaded")
 categorical_tensor = raw_data["categorical"]
 cat_cardinalities = [int(torch.max(categorical_tensor[:, i]) + 1) for i in range(categorical_tensor.shape[1])]
 
+
+# Re-wrap the data using Dataset class
+full_dataset = IoTSequenceDataset(dataset_path, max_seq_len=64)
+
 # Init model
 model = IoTTransformer(
-    num_numerical=len(numerical_columns),
-    cat_cardinalities=cat_cardinalities,
-    num_classes=8
+    input_dim=full_dataset[0]["packet_seq"].shape[1],  # This is F: feature dimension
+    embed_dim=64,
+    num_heads=4,
+    num_layers=2,
+    dropout=0.1,
+    num_classes=8,
+    max_seq_len=64
 )
 
-# Re-wrap the data using your custom Dataset class
-full_dataset = IoTDataset(dataset_path)
 
 # Split the subset into train/val/test
 train_dataset, val_dataset, test_dataset = split_dataset_three_ways(full_dataset, val_ratio=0.1, test_ratio=0.1)
