@@ -1,3 +1,4 @@
+# train.py
 from torch.utils.data import DataLoader
 import torch
 import torch.nn as nn
@@ -27,7 +28,12 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
+
+
             total_loss += loss.item()
+            preds = torch.argmax(outputs, dim=1)
+            all_preds.extend(preds.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
 
 
         train_acc = accuracy_score(all_labels, all_preds)
@@ -38,11 +44,12 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
 
         with torch.no_grad():
             for batch in val_loader:
-                numerical = batch['numerical'].to(device)
-                categorical = batch['categorical'].to(device)
+
                 labels = batch['label'].to(device)
 
-                outputs = model(numerical, categorical)
+                packet_seq = batch['packet_seq'].to(device)
+                outputs = model(packet_seq)
+
                 preds = torch.argmax(outputs, dim=1)
 
                 val_preds.extend(preds.cpu().numpy())
@@ -64,11 +71,10 @@ def test_model(model, test_dataset, batch_size=64, device='cuda'):
 
     with torch.no_grad():
         for batch in test_loader:
-            numerical = batch['numerical'].to(device)
-            categorical = batch['categorical'].to(device)
+            packet_seq = batch['packet_seq'].to(device)
             labels = batch['label'].to(device)
 
-            outputs = model(numerical, categorical)
+            outputs = model(packet_seq)
             preds = torch.argmax(outputs, dim=1)
 
             all_preds.extend(preds.cpu().numpy())

@@ -1,8 +1,9 @@
+# transformer.py
 import torch
 import torch.nn as nn
 
 class IoTTransformer(nn.Module):
-    def __init__(self, input_dim, embed_dim=64, num_heads=4, num_layers=2, dropout=0.1, num_classes=2, max_seq_len=128):
+    def __init__(self, input_dim, embed_dim=64, num_heads=4, num_layers=2, dropout=0.1, num_classes=8, max_seq_len=128):
         super().__init__()
         self.packet_proj = nn.Linear(input_dim, embed_dim)  # Project packet features to embedding
 
@@ -25,7 +26,7 @@ class IoTTransformer(nn.Module):
     def forward(self, packet_seq):
         # packet_seq: [B, T, F]
         x = self.packet_proj(packet_seq)  # → [B, T, E]
-        x = x + self.position_encoding[:x.size(1)]  # Add positional enc
+        x = x + self.position_encoding[:x.size(1)].unsqueeze(0)  # → [1, T, E]
 
         x = self.transformer(x)  # → [B, T, E]
 
