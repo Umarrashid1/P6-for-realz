@@ -97,7 +97,7 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
 
                 # Sliding window to create overlapping chunks
                 window_size = max_seq_len
-                stride = window_size // 4  # 1/4 overlap
+                stride = window_size // 2  #
                 num_chunks = (flow_len - window_size) // stride + 1
 
                 print(f"[INFO] Processing flow from file: {file_path} with label: {label}")
