@@ -3,7 +3,9 @@ from torch.utils.data import DataLoader
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+
 
 def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1e-3, device='cuda'):
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -84,4 +86,20 @@ def test_model(model, test_dataset, batch_size=64, device='cuda'):
             all_labels.extend(labels.cpu().numpy())
 
     acc = accuracy_score(all_labels, all_preds)
-    print(f"Test Accuracy: {acc:.4f}")
+    print(f"\nTest Accuracy: {acc:.4f}")
+
+    # Classification report (precision, recall, f1-score per class)
+    print("\nClassification Report:")
+    print(classification_report(all_labels, all_preds, digits=4))
+
+    # Confusion Matrix
+    cm = confusion_matrix(all_labels, all_preds)
+    print("\nConfusion Matrix:")
+    print(cm)
+
+    # Optional: Class-wise accuracy
+    cm_diag = np.diag(cm)
+    class_counts = cm.sum(axis=1)
+    classwise_acc = cm_diag / class_counts
+    for i, acc in enumerate(classwise_acc):
+        print(f"Class {i} Accuracy: {acc:.4f}")
