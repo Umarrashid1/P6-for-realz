@@ -88,6 +88,7 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
             df[categorical_columns] = df[categorical_columns].astype("category").apply(lambda x: x.cat.codes)
 
             # Group packets into flows (5-tuple)
+            # This could potentially group packets from different times together into one maybe we need to group packets by their time series,
             group_keys = ['src_ip', 'dst_ip', 'src_port', 'dst_port', 'protocol']
             flow_groups = df.groupby(group_keys)
 
