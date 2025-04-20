@@ -49,7 +49,7 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
                 # Add the 'protocol' column to the DataFrame
                 df['protocol'] = df.apply(infer_protocol, axis=1)
             else:
-                print(f"[SKIP] Missing 'l4_tcp' or 'l4_udp' in {file_path}")
+                print(f"[SKIP] Missing 'l4_tcp' or 'l4_udp' or OTHER in {file_path}")
                 continue
 
             # Subset dataframe
@@ -95,10 +95,16 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
             for _, flow_df in flow_groups:
                 flow_features = flow_df[numerical_columns + categorical_columns].values
                 flow_len = len(flow_features)
+                print(f"flow len{flow_len}")
+                print(f"flow len{flow_len}")
+
 
                 # Sliding window to create overlapping chunks
                 window_size = max_seq_len
                 stride = window_size // 2  #
+                print(f"stride{stride}")
+                print(f"window size{window_size}")
+
                 num_chunks = (flow_len - window_size) // stride + 1
 
                 print(f"[INFO] Processing flow from file: {file_path} with label: {label}")
