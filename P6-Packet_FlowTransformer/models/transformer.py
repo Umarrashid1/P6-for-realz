@@ -18,10 +18,10 @@ class IoTTransformer(nn.Module):
         # For flow-level prediction
         # Need to change 128 to reflect feature amount from .config
         self.classifier = nn.Sequential(
-            nn.Linear(embed_dim, 128),
+            nn.Linear(embed_dim, 130),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(128, num_classes)
+            nn.Linear(130, num_classes)
         )
 
     def forward(self, packet_seq, attention_mask=None):
