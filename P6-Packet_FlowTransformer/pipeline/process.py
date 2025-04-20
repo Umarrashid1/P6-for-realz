@@ -78,15 +78,19 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
                 flow_features = flow_df[numerical_columns + categorical_columns].values
                 flow_len = len(flow_features)
 
-                print(f"[INFO] Processing flow with length {flow_len} from {file_path}")
-
+                print(f"\n[INFO] Processing flow from {file_path}")
+                print(f"       → Flow length: {flow_len}")
 
                 if flow_len < max_seq_len:
+                    print(f"       → Flow is shorter than max_seq_len ({max_seq_len}) — will pad.")
+
                     chunk = flow_features
                     pkt_tensor = torch.tensor(chunk, dtype=torch.float32)
                     attention_mask = torch.cat([torch.ones(flow_len), torch.zeros(max_seq_len - flow_len)])
                     pad = torch.zeros(max_seq_len - flow_len, pkt_tensor.shape[1])
                     pkt_tensor = torch.cat([pkt_tensor, pad], dim=0)
+
+                    print(f"       → Padded to shape: {pkt_tensor.shape}, attention_mask: {attention_mask.tolist()}")
 
                     all_packet_seqs.append(pkt_tensor)
                     all_labels.append(label)
@@ -94,22 +98,29 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
 
                 else:
                     stride = max_seq_len // 2
-                    for start_idx in range(0, flow_len - max_seq_len + 1, stride):
+                    num_chunks = (flow_len - max_seq_len) // stride + 1
+                    print(f"       → Flow is long enough. Using stride: {stride}")
+                    print(f"       → Splitting into {num_chunks} chunks of size {max_seq_len}")
+
+                    for i, start_idx in enumerate(range(0, flow_len - max_seq_len + 1, stride)):
                         end_idx = start_idx + max_seq_len
                         chunk = flow_features[start_idx:end_idx]
                         pkt_tensor = torch.tensor(chunk, dtype=torch.float32)
                         attention_mask = torch.ones(max_seq_len)
 
+                        print(f"         → Chunk {i + 1}: start={start_idx}, end={end_idx}")
+
                         all_packet_seqs.append(pkt_tensor)
                         all_labels.append(label)
                         attention_masks.append(attention_mask)
 
-                    # Handle remainder at the end
                     remainder = (flow_len - max_seq_len) % stride
                     if remainder != 0 and (flow_len > max_seq_len):
+                        print(f"       → Handling remainder at end of flow (last {max_seq_len} packets)")
                         final_chunk = flow_features[-max_seq_len:]
                         pkt_tensor = torch.tensor(final_chunk, dtype=torch.float32)
                         attention_mask = torch.ones(max_seq_len)
+
                         all_packet_seqs.append(pkt_tensor)
                         all_labels.append(label)
                         attention_masks.append(attention_mask)
