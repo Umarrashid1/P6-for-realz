@@ -72,7 +72,7 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
             df[categorical_columns] = df[categorical_columns].astype("category").apply(lambda x: x.cat.codes)
 
             group_keys = ['src_ip', 'dst_ip', 'src_port', 'dst_port', 'protocol']
-            flow_groups = df.groupby(group_keys)
+            flow_groups = df.groupby(group_keys, sort=False) #To sort or not to sort
 
             for _, flow_df in flow_groups:
                 flow_features = flow_df[numerical_columns + categorical_columns].values
