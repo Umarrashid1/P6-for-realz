@@ -78,6 +78,9 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
                 flow_features = flow_df[numerical_columns + categorical_columns].values
                 flow_len = len(flow_features)
 
+                print(f"[INFO] Processing flow with length {flow_len} from {file_path}")
+
+
                 if flow_len < max_seq_len:
                     chunk = flow_features
                     pkt_tensor = torch.tensor(chunk, dtype=torch.float32)
