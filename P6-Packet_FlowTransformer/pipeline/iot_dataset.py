@@ -6,28 +6,21 @@ class IoTSequenceDataset(Dataset):
     def __init__(self, pt_file_path, max_seq_len=64):
         data = torch.load(pt_file_path)
 
-        self.packet_seqs = data["packet_seq"]  # shape: [N_flows, T, F]
-        self.labels = data["label"]            # shape: [N_flows]
+        self.packet_seqs = data["packet_seq"]         # shape: [N, T, F]
+        self.labels = data["label"]                   # shape: [N]
+        self.attention_masks = data["attention_mask"] # shape: [N, T]
         self.max_seq_len = max_seq_len
 
-        # pad/truncate to uniform length
-        self.padded_seqs = []
-        for seq in self.packet_seqs:
-            if len(seq) < max_seq_len:
-                pad_len = max_seq_len - len(seq)
-                pad = torch.zeros(pad_len, seq.size(1))
-                padded_seq = torch.cat([seq, pad], dim=0)
-            else:
-                padded_seq = seq[:max_seq_len]
-            self.padded_seqs.append(padded_seq)
-
-        self.padded_seqs = torch.stack(self.padded_seqs)
+        # Ensure all sequences are of the same length
+        if self.packet_seqs.shape[1] != max_seq_len:
+            raise ValueError(f"Expected sequence length {max_seq_len}, but got {self.packet_seqs.shape[1]}.")
 
     def __len__(self):
         return len(self.labels)
 
     def __getitem__(self, idx):
         return {
-            "packet_seq": self.padded_seqs[idx],  # [T, F]
-            "label": self.labels[idx]
+            "packet_seq": self.packet_seqs[idx],        # [T, F]
+            "label": self.labels[idx],
+            "attention_mask": self.attention_masks[idx] # [T]
         }
