@@ -2,135 +2,147 @@ import os
 import pandas as pd
 import numpy as np
 import torch
+from multiprocessing import Pool, cpu_count
 from .config import categorical_columns, numerical_columns, LABEL_MAPPING
 
-def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, rows_per_file=20000, missing_strategy="zero", max_seq_len=64):
-    all_packet_seqs = []
-    all_labels = []
-    attention_masks = []
 
-    for root, _, files in os.walk(dataset_dir):
-        for file in files:
-            if not file.endswith(".csv"):
-                continue
+def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, rows_per_file=20000,
+                                   missing_strategy="zero", max_seq_len=64):
 
-            file_path = os.path.join(root, file)
-            label = find_label_from_path(file_path)
-            if label == -1:
-                print(f"[SKIP] No label for: {file_path}")
-                continue
+    def get_all_csv_paths(root_dir):
+        return [
+            os.path.join(root, file)
+            for root, _, files in os.walk(root_dir)
+            for file in files if file.endswith(".csv")
+        ]
 
-            try:
-                df = pd.read_csv(file_path, nrows=rows_per_file if test_mode else None)
-            except Exception as e:
-                print(f"[ERROR] Couldn't read {file_path}: {e}")
-                continue
+    all_csv_files = get_all_csv_paths(dataset_dir)
 
-            missing_cols = [col for col in numerical_columns + categorical_columns if col not in df.columns]
-            required_flow_cols = ['src_ip', 'dst_ip', 'src_port', 'dst_port']
+    print("[INFO] Scanning files to compute global min/max for normalization...")
+    global_min = {col: float('inf') for col in numerical_columns}
+    global_max = {col: float('-inf') for col in numerical_columns}
 
-            if missing_cols or any(c not in df.columns for c in required_flow_cols):
-                print(f"[SKIP] Missing columns in {file_path}: {missing_cols}")
-                continue
+    for file_path in all_csv_files:
+        try:
+            df = pd.read_csv(file_path, nrows=rows_per_file if test_mode else None)
+            for col in numerical_columns:
+                if col in df.columns:
+                    global_min[col] = min(global_min[col], df[col].min(skipna=True))
+                    global_max[col] = max(global_max[col], df[col].max(skipna=True))
+        except Exception as e:
+            print(f"[WARN] Skipping {file_path} during normalization scan: {e}")
 
-            if 'l4_tcp' in df.columns and 'l4_udp' in df.columns:
-                def infer_protocol(row):
-                    if row['l4_tcp'] == 1:
-                        return 'TCP'
-                    elif row['l4_udp'] == 1:
-                        return 'UDP'
-                    else:
-                        return 'OTHER'
-                df['protocol'] = df.apply(infer_protocol, axis=1)
+    def process_file(file_path):
+        label = find_label_from_path(file_path)
+        if label == -1:
+            print(f"[SKIP] No label for: {file_path}")
+            return None
+
+        try:
+            df = pd.read_csv(file_path, nrows=rows_per_file if test_mode else None)
+        except Exception as e:
+            print(f"[ERROR] Couldn't read {file_path}: {e}")
+            return None
+
+        missing_cols = [col for col in numerical_columns + categorical_columns if col not in df.columns]
+        required_flow_cols = ['src_ip', 'dst_ip', 'src_port', 'dst_port']
+
+        if missing_cols or any(c not in df.columns for c in required_flow_cols):
+            print(f"[SKIP] Missing columns in {file_path}: {missing_cols}")
+            return None
+
+        if 'l4_tcp' in df.columns and 'l4_udp' in df.columns:
+            df['protocol'] = np.where(df['l4_tcp'] == 1, 'TCP',
+                                      np.where(df['l4_udp'] == 1, 'UDP', 'OTHER'))
+        else:
+            print(f"[SKIP] Missing 'l4_tcp' or 'l4_udp' in {file_path}")
+            return None
+
+        df = df[numerical_columns + categorical_columns + ['src_ip', 'dst_ip', 'src_port', 'dst_port', 'protocol']].copy()
+
+        if missing_strategy == "mean":
+            for col in numerical_columns:
+                df[col].fillna(df[col].mean(), inplace=True)
+            for col in categorical_columns:
+                df[col].fillna(df[col].mode().iloc[0], inplace=True)
+        elif missing_strategy == "median":
+            for col in numerical_columns:
+                df[col].fillna(df[col].median(), inplace=True)
+            for col in categorical_columns:
+                df[col].fillna(df[col].mode().iloc[0], inplace=True)
+        elif missing_strategy == "zero":
+            df[numerical_columns] = df[numerical_columns].fillna(0)
+            df[categorical_columns] = df[categorical_columns].fillna("unknown")
+        elif missing_strategy == "ffill":
+            df.fillna(method='ffill', inplace=True)
+        else:
+            raise ValueError(f"Unknown missing_strategy: {missing_strategy}")
+
+        for col in numerical_columns:
+            min_val = global_min[col]
+            max_val = global_max[col]
+            df[col] = (df[col] - min_val) / (max_val - min_val + 1e-6)
+
+        df[categorical_columns] = df[categorical_columns].astype("category").apply(lambda x: x.cat.codes)
+
+        group_keys = ['src_ip', 'dst_ip', 'src_port', 'dst_port', 'protocol']
+        flow_groups = df.groupby(group_keys, sort=False)
+
+        local_packet_seqs, local_labels, local_attention_masks = [], [], []
+
+        for _, flow_df in flow_groups:
+            flow_features = flow_df[numerical_columns + categorical_columns].values
+            flow_len = len(flow_features)
+
+            if flow_len < max_seq_len:
+                chunk = flow_features
+                pkt_tensor = torch.tensor(chunk, dtype=torch.float32)
+                attention_mask = torch.cat([torch.ones(flow_len), torch.zeros(max_seq_len - flow_len)])
+                pad = torch.zeros(max_seq_len - flow_len, pkt_tensor.shape[1])
+                pkt_tensor = torch.cat([pkt_tensor, pad], dim=0)
+
+                local_packet_seqs.append(pkt_tensor)
+                local_labels.append(label)
+                local_attention_masks.append(attention_mask)
             else:
-                print(f"[SKIP] Missing 'l4_tcp' or 'l4_udp' in {file_path}")
-                continue
-
-            df = df[numerical_columns + categorical_columns + ['src_ip', 'dst_ip', 'src_port', 'dst_port', 'protocol']].copy()
-
-            if missing_strategy == "mean":
-                for col in numerical_columns:
-                    df[col].fillna(df[col].mean(), inplace=True)
-                for col in categorical_columns:
-                    df[col].fillna(df[col].mode().iloc[0], inplace=True)
-            elif missing_strategy == "median":
-                for col in numerical_columns:
-                    df[col].fillna(df[col].median(), inplace=True)
-                for col in categorical_columns:
-                    df[col].fillna(df[col].mode().iloc[0], inplace=True)
-            elif missing_strategy == "zero":
-                df[numerical_columns] = df[numerical_columns].fillna(0)
-                df[categorical_columns] = df[categorical_columns].fillna("unknown")
-            elif missing_strategy == "ffill":
-                df.fillna(method='ffill', inplace=True)
-            else:
-                raise ValueError(f"Unknown missing_strategy: {missing_strategy}")
-
-            df[numerical_columns] = (df[numerical_columns] - df[numerical_columns].min()) / (
-                df[numerical_columns].max() - df[numerical_columns].min() + 1e-6
-            )
-            df[categorical_columns] = df[categorical_columns].astype("category").apply(lambda x: x.cat.codes)
-
-            group_keys = ['src_ip', 'dst_ip', 'src_port', 'dst_port', 'protocol']
-            flow_groups = df.groupby(group_keys, sort=False) #To sort or not to sort
-
-            for _, flow_df in flow_groups:
-                flow_features = flow_df[numerical_columns + categorical_columns].values
-                flow_len = len(flow_features)
-
-                print(f"\n[INFO] Processing flow from {file_path}")
-                print(f"       → Flow length: {flow_len}")
-
-                if flow_len < max_seq_len:
-                    print(f"       → Flow is shorter than max_seq_len ({max_seq_len}) — will pad.")
-
-                    chunk = flow_features
+                stride = max_seq_len // 2
+                for start_idx in range(0, flow_len - max_seq_len + 1, stride):
+                    chunk = flow_features[start_idx:start_idx + max_seq_len]
                     pkt_tensor = torch.tensor(chunk, dtype=torch.float32)
-                    attention_mask = torch.cat([torch.ones(flow_len), torch.zeros(max_seq_len - flow_len)])
-                    pad = torch.zeros(max_seq_len - flow_len, pkt_tensor.shape[1])
-                    pkt_tensor = torch.cat([pkt_tensor, pad], dim=0)
+                    attention_mask = torch.ones(max_seq_len)
+                    local_packet_seqs.append(pkt_tensor)
+                    local_labels.append(label)
+                    local_attention_masks.append(attention_mask)
 
-                    print(f"       → Padded to shape: {pkt_tensor.shape}, attention_mask: {attention_mask.tolist()}")
+                remainder = (flow_len - max_seq_len) % stride
+                if remainder != 0:
+                    final_chunk = flow_features[-max_seq_len:]
+                    pkt_tensor = torch.tensor(final_chunk, dtype=torch.float32)
+                    attention_mask = torch.ones(max_seq_len)
+                    local_packet_seqs.append(pkt_tensor)
+                    local_labels.append(label)
+                    local_attention_masks.append(attention_mask)
 
-                    all_packet_seqs.append(pkt_tensor)
-                    all_labels.append(label)
-                    attention_masks.append(attention_mask)
+        return local_packet_seqs, local_labels, local_attention_masks
 
-                else:
-                    stride = max_seq_len // 2
-                    num_chunks = (flow_len - max_seq_len) // stride + 1
-                    print(f"       → Flow is long enough. Using stride: {stride}")
-                    print(f"       → Splitting into {num_chunks} chunks of size {max_seq_len}")
+    print(f"[INFO] Starting multiprocessing with {cpu_count()} workers...")
+    with Pool(cpu_count()) as pool:
+        results = pool.map(process_file, all_csv_files)
 
-                    for i, start_idx in enumerate(range(0, flow_len - max_seq_len + 1, stride)):
-                        end_idx = start_idx + max_seq_len
-                        chunk = flow_features[start_idx:end_idx]
-                        pkt_tensor = torch.tensor(chunk, dtype=torch.float32)
-                        attention_mask = torch.ones(max_seq_len)
-
-                        print(f"         → Chunk {i + 1}: start={start_idx}, end={end_idx}")
-
-                        all_packet_seqs.append(pkt_tensor)
-                        all_labels.append(label)
-                        attention_masks.append(attention_mask)
-
-                    remainder = (flow_len - max_seq_len) % stride
-                    if remainder != 0 and (flow_len > max_seq_len):
-                        print(f"       → Handling remainder at end of flow (last {max_seq_len} packets)")
-                        final_chunk = flow_features[-max_seq_len:]
-                        pkt_tensor = torch.tensor(final_chunk, dtype=torch.float32)
-                        attention_mask = torch.ones(max_seq_len)
-
-                        all_packet_seqs.append(pkt_tensor)
-                        all_labels.append(label)
-                        attention_masks.append(attention_mask)
+    all_packet_seqs, all_labels, attention_masks = [], [], []
+    for result in results:
+        if result:
+            pkt_seqs, lbls, masks = result
+            all_packet_seqs.extend(pkt_seqs)
+            all_labels.extend(lbls)
+            attention_masks.extend(masks)
 
     if not all_packet_seqs:
         raise RuntimeError("No flows found.")
 
-    packet_tensor = torch.stack(all_packet_seqs)  # [N, T, F]
+    packet_tensor = torch.stack(all_packet_seqs)
     label_tensor = torch.tensor(all_labels, dtype=torch.long)
-    attention_mask_tensor = torch.stack(attention_masks)  # [N, T]
+    attention_mask_tensor = torch.stack(attention_masks)
 
     torch.save({
         "packet_seq": packet_tensor,
