@@ -7,6 +7,9 @@ from functools import partial
 from .config import categorical_columns, numerical_columns, LABEL_MAPPING
 
 
+# Check for GPU availability
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 def find_label_from_path(file_path):
     current_path = os.path.dirname(file_path)
     while current_path != os.path.dirname(current_path):  # Stop at root
@@ -63,6 +66,7 @@ def process_file(file_path, rows_per_file, test_mode, missing_strategy, max_seq_
     else:
         raise ValueError(f"Unknown missing_strategy: {missing_strategy}")
 
+    # Transfer numerical data to GPU for normalization
     for col in numerical_columns:
         min_val = global_min[col]
         max_val = global_max[col]
@@ -75,15 +79,16 @@ def process_file(file_path, rows_per_file, test_mode, missing_strategy, max_seq_
 
     local_packet_seqs, local_labels, local_attention_masks = [], [], []
 
+    # Process each flow and transfer the data to GPU
     for _, flow_df in flow_groups:
         flow_features = flow_df[numerical_columns + categorical_columns].values
         flow_len = len(flow_features)
 
         if flow_len < max_seq_len:
-            pkt_tensor = torch.tensor(flow_features, dtype=torch.float32)
+            pkt_tensor = torch.tensor(flow_features, dtype=torch.float32).to(device)
             pad_len = max_seq_len - flow_len
-            pad = torch.zeros(pad_len, pkt_tensor.shape[1])
-            attention_mask = torch.cat([torch.ones(flow_len), torch.zeros(pad_len)])
+            pad = torch.zeros(pad_len, pkt_tensor.shape[1]).to(device)
+            attention_mask = torch.cat([torch.ones(flow_len), torch.zeros(pad_len)]).to(device)
             pkt_tensor = torch.cat([pkt_tensor, pad], dim=0)
 
             local_packet_seqs.append(pkt_tensor)
@@ -93,8 +98,8 @@ def process_file(file_path, rows_per_file, test_mode, missing_strategy, max_seq_
             stride = max_seq_len // 2
             for start_idx in range(0, flow_len - max_seq_len + 1, stride):
                 chunk = flow_features[start_idx:start_idx + max_seq_len]
-                pkt_tensor = torch.tensor(chunk, dtype=torch.float32)
-                attention_mask = torch.ones(max_seq_len)
+                pkt_tensor = torch.tensor(chunk, dtype=torch.float32).to(device)
+                attention_mask = torch.ones(max_seq_len).to(device)
                 local_packet_seqs.append(pkt_tensor)
                 local_labels.append(label)
                 local_attention_masks.append(attention_mask)
@@ -102,8 +107,8 @@ def process_file(file_path, rows_per_file, test_mode, missing_strategy, max_seq_
             remainder = (flow_len - max_seq_len) % stride
             if remainder != 0:
                 final_chunk = flow_features[-max_seq_len:]
-                pkt_tensor = torch.tensor(final_chunk, dtype=torch.float32)
-                attention_mask = torch.ones(max_seq_len)
+                pkt_tensor = torch.tensor(final_chunk, dtype=torch.float32).to(device)
+                attention_mask = torch.ones(max_seq_len).to(device)
                 local_packet_seqs.append(pkt_tensor)
                 local_labels.append(label)
                 local_attention_masks.append(attention_mask)
@@ -127,6 +132,7 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
     global_min = {col: float('inf') for col in numerical_columns}
     global_max = {col: float('-inf') for col in numerical_columns}
 
+    # Scanning for min/max on GPU
     for file_path in all_csv_files:
         try:
             df = pd.read_csv(file_path, nrows=rows_per_file if test_mode else None)
@@ -163,9 +169,10 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
     if not all_packet_seqs:
         raise RuntimeError("No flows found.")
 
-    packet_tensor = torch.stack(all_packet_seqs)
-    label_tensor = torch.tensor(all_labels, dtype=torch.long)
-    attention_mask_tensor = torch.stack(attention_masks)
+    # Convert final results to tensors and move them to the appropriate device (GPU or CPU)
+    packet_tensor = torch.stack(all_packet_seqs).to(device)
+    label_tensor = torch.tensor(all_labels, dtype=torch.long).to(device)
+    attention_mask_tensor = torch.stack(attention_masks).to(device)
 
     torch.save({
         "packet_seq": packet_tensor,
