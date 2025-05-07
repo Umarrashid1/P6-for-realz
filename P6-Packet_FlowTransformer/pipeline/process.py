@@ -7,7 +7,7 @@ import pyarrow.csv as pv
 
 from .config import categorical_columns, numerical_columns, LABEL_MAPPING
 
-# ── LOAD GLOBAL NUMERIC STATS ──────────────────────────────────────────────
+# ── LOAD GLOBAL NUMERIC STATS ─────────────────────────────────────────
 STD_STATS_PATH = "standardization_stats.npz"
 _std_stats = np.load(STD_STATS_PATH)
 STD_COLS = _std_stats["cols"].tolist()
@@ -15,32 +15,25 @@ GLOBAL_MEAN = dict(zip(STD_COLS, _std_stats["mean"]))
 GLOBAL_STD = dict(zip(STD_COLS, _std_stats["std"]))
 EPS = 1e-6
 
-
 def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, rows_per_file=20000, missing_strategy="zero", max_seq_len=64):
     all_packet_seqs = []
     all_labels = []
     attention_masks = []
 
-    # ── LOAD ARROW DATASET WITH HEADER SUPPORT ──────────────────────────────
     csv_format = ds.CsvFileFormat(read_options=pv.ReadOptions(autogenerate_column_names=False))
     dataset = ds.dataset(dataset_dir, format=csv_format)
 
-    # ── SLICE DATASET FOR DEBUGGING MODE ────────────────────────────────────
-    if test_mode and rows_per_file:
-        table = dataset.head(rows_per_file)
-        df = table.to_pandas()
-        fragments = [(df, dataset_dir)]  # dummy label
-    else:
-        # Manually loop through fragments (each CSV file)
-        fragments = []
-        for fragment in dataset.get_fragments():
-            try:
-                table = fragment.to_table()
-                df = table.to_pandas()
-                path = fragment.path
-                fragments.append((df, os.path.join(dataset_dir, path)))
-            except Exception as e:
-                print(f"[SKIP] Could not read {fragment.path}: {e}")
+    fragments = []
+    for fragment in dataset.get_fragments():
+        try:
+            table = fragment.to_table()
+            if test_mode and rows_per_file:
+                table = table.slice(0, rows_per_file)
+            df = table.to_pandas()
+            path = fragment.path
+            fragments.append((df, os.path.join(dataset_dir, path)))
+        except Exception as e:
+            print(f"[SKIP] Could not read {fragment.path}: {e}")
 
     for df, file_path in fragments:
         label = find_label_from_path(file_path)
@@ -146,7 +139,6 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
 
     print(f"\n[INFO] Preprocessing complete — saved {len(packet_tensor)} flows to {output_file}")
     print(f"[INFO] Shape: packets {packet_tensor.shape}, labels {label_tensor.shape}")
-
 
 def find_label_from_path(file_path):
     current_path = os.path.dirname(file_path)
