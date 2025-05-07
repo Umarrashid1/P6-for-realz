@@ -4,6 +4,7 @@ import pandas as pd
 import torch
 import pyarrow.dataset as ds
 import pyarrow.csv as pv
+import concurrent.futures
 
 from .config import categorical_columns, numerical_columns, LABEL_MAPPING
 
@@ -15,6 +16,17 @@ GLOBAL_MEAN = dict(zip(STD_COLS, _std_stats["mean"]))
 GLOBAL_STD = dict(zip(STD_COLS, _std_stats["std"]))
 EPS = 1e-6
 
+def load_fragment(fragment, dataset_dir, test_mode=False, rows_per_file=None):
+    try:
+        table = fragment.to_table()
+        if test_mode and rows_per_file:
+            table = table.slice(0, rows_per_file)
+        df = table.to_pandas()
+        return df, os.path.join(dataset_dir, fragment.path)
+    except Exception as e:
+        print(f"[SKIP] Could not read {fragment.path}: {e}")
+        return None
+
 def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, rows_per_file=20000, missing_strategy="zero", max_seq_len=64):
     all_packet_seqs = []
     all_labels = []
@@ -23,17 +35,13 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
     csv_format = ds.CsvFileFormat(read_options=pv.ReadOptions(autogenerate_column_names=False))
     dataset = ds.dataset(dataset_dir, format=csv_format)
 
-    fragments = []
-    for fragment in dataset.get_fragments():
-        try:
-            table = fragment.to_table()
-            if test_mode and rows_per_file:
-                table = table.slice(0, rows_per_file)
-            df = table.to_pandas()
-            path = fragment.path
-            fragments.append((df, os.path.join(dataset_dir, path)))
-        except Exception as e:
-            print(f"[SKIP] Could not read {fragment.path}: {e}")
+    # ── PARALLEL LOAD ───────────────────────────────
+    with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+        futures = [
+            executor.submit(load_fragment, fragment, dataset_dir, test_mode, rows_per_file)
+            for fragment in dataset.get_fragments()
+        ]
+        fragments = [f.result() for f in futures if f.result() is not None]
 
     for df, file_path in fragments:
         label = find_label_from_path(file_path)
