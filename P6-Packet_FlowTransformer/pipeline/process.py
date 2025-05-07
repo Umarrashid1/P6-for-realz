@@ -21,13 +21,18 @@ EPS = 1e-6  # numerical safety
 # ❶  Helpers
 # ---------------------------------------------------------------------------
 
+# ----- CSV format definition --------------------------------------------
+convert_options = pv.ConvertOptions(
+    column_types={c: pa.float64() for c in numerical_columns},  # lock numerics
+    strings_can_be_null=True,
+    null_values=["", "NA", "?", "inf", "nan"],
+)
 csv_format = ds.CsvFileFormat(
-    read_options   = pv.ReadOptions(autogenerate_column_names=False),
-    parse_options  = pv.ParseOptions(delimiter=","),
-    convert_options= pv.ConvertOptions(
-        invalid_values_as_null=True,   # ← key line
-        strings_can_be_null=True       # keep if you like
-    )
+    read_options=pv.ReadOptions(autogenerate_column_names=False),
+    parse_options=pv.ParseOptions(delimiter=","),
+    convert_options=convert_options,
+)
+
 )
 
 
