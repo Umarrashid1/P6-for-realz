@@ -4,6 +4,7 @@ import pandas as pd
 import torch
 import pyarrow.dataset as ds
 import pyarrow.csv as pv
+import pyarrow as pa
 import concurrent.futures
 from typing import List, Tuple
 
