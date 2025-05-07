@@ -104,7 +104,12 @@ def process_fragment(args) -> Tuple[List[np.ndarray], List[int], List[np.ndarray
         flow_features = flow_df[numerical_columns + categorical_columns].values
         flow_len = len(flow_features)
 
+        # Debug prints
+        print(f"\n[INFO] Processing flow from {file_path}")
+        print(f"       → Flow length: {flow_len}")
+
         if flow_len < max_seq_len:
+            print(f"       → Flow is shorter than max_seq_len ({max_seq_len}) — padding up.")
             pad_len = max_seq_len - flow_len
             attention = np.concatenate([np.ones(flow_len), np.zeros(pad_len)])
             pad = np.zeros((pad_len, flow_features.shape[1]), dtype=np.float32)
@@ -114,13 +119,18 @@ def process_fragment(args) -> Tuple[List[np.ndarray], List[int], List[np.ndarray
             label_list.append(label)
         else:
             stride = max_seq_len // 2
-            for start in range(0, flow_len - max_seq_len + 1, stride):
+            num_chunks = (flow_len - max_seq_len) // stride + 1
+            print(f"       → Flow is long enough. Using stride: {stride}")
+            print(f"       → Splitting into {num_chunks} chunks of size {max_seq_len}")
+            for i, start in enumerate(range(0, flow_len - max_seq_len + 1, stride)):
                 end = start + max_seq_len
+                print(f"         → Chunk {i+1}: start={start}, end={end}")
                 pkt_arrays.append(flow_features[start:end].astype(np.float32))
                 mask_arrays.append(np.ones(max_seq_len, dtype=np.float32))
                 label_list.append(label)
             # remainder
             if (flow_len - max_seq_len) % stride != 0:
+                print(f"       → Handling remainder (last {max_seq_len} packets)")
                 pkt_arrays.append(flow_features[-max_seq_len:].astype(np.float32))
                 mask_arrays.append(np.ones(max_seq_len, dtype=np.float32))
                 label_list.append(label)
@@ -139,10 +149,10 @@ def preprocess_flows_as_sequences(
     missing_strategy="zero",
     max_seq_len=64,
 ):
-    # 1) Discover Arrow fragments (files) ----------------------------------
+    # 1) Discover Arrow fragments (files)
     dataset = ds.dataset(dataset_dir, format=csv_format)
 
-    # 2) Parallel I/O load (threads) ---------------------------------------
+    # 2) Parallel I/O load (threads)
     with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count()) as tpool:
         load_futs = [
             tpool.submit(load_fragment, frag, dataset_dir, test_mode, rows_per_file)
@@ -153,10 +163,8 @@ def preprocess_flows_as_sequences(
     if not loaded:
         raise RuntimeError("No fragments loaded (all skipped or failed).")
 
-    # 3) Parallel CPU preprocessing (processes) ----------------------------
-    proc_args = [
-        (df, path, missing_strategy, max_seq_len) for df, path in loaded
-    ]
+    # 3) Parallel CPU preprocessing (processes)
+    proc_args = [(df, path, missing_strategy, max_seq_len) for df, path in loaded]
 
     pkt_list: List[np.ndarray] = []
     lbl_list: List[int] = []
@@ -176,11 +184,7 @@ def preprocess_flows_as_sequences(
     attention_mask_tensor = torch.tensor(np.stack(msk_list), dtype=torch.float32)
 
     torch.save(
-        {
-            "packet_seq": packet_tensor,
-            "label": label_tensor,
-            "attention_mask": attention_mask_tensor,
-        },
+        {"packet_seq": packet_tensor, "label": label_tensor, "attention_mask": attention_mask_tensor},
         output_file,
     )
 
@@ -190,7 +194,6 @@ def preprocess_flows_as_sequences(
     print(
         f"[INFO] Shape: packets {packet_tensor.shape}, labels {label_tensor.shape}"
     )
-
 
 # ---------------------------------------------------------------------------
 # ❸  Label helper (unchanged)
