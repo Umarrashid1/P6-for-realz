@@ -38,4 +38,4 @@ def compute_and_save_global_stats(dataset_dir, output_file):
     print(f"[INFO] Saved global stats to {output_file}")
 
 if __name__ == "__main__":
-    compute_and_save_global_stats(dataset_dir="../../dataset/raw_dataset", output_file="standardization_stats.npz")
+    compute_and_save_global_stats(dataset_dir="../../../dataset/raw_dataset", output_file="standardization_stats.npz")
