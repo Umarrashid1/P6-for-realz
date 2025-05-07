@@ -4,6 +4,16 @@ import numpy as np
 import torch
 from .config import categorical_columns, numerical_columns, LABEL_MAPPING
 
+# ── LOAD GLOBAL NUMERIC STATS ──────────────────────────────────────────────
+STD_STATS_PATH = "standardization_stats.npz"
+_std_stats   = np.load(STD_STATS_PATH)
+STD_COLS     = _std_stats["cols"].tolist()
+GLOBAL_MEAN  = dict(zip(STD_COLS, _std_stats["mean"]))
+GLOBAL_STD   = dict(zip(STD_COLS, _std_stats["std"]))
+EPS = 1e-6                                       # avoid divide‑by‑zero
+
+
+
 def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, rows_per_file=20000, missing_strategy="zero", max_seq_len=64):
     all_packet_seqs = []
     all_labels = []
@@ -21,7 +31,7 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
                 continue
 
             try:
-                df = pd.read_csv(file_path, nrows=rows_per_file if test_mode else None)
+                df = pd.read_csv(file_path, engine="pyarrow", nrows=rows_per_file if test_mode else None)
             except Exception as e:
                 print(f"[ERROR] Couldn't read {file_path}: {e}")
                 continue
@@ -33,18 +43,11 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
                 print(f"[SKIP] Missing columns in {file_path}: {missing_cols}")
                 continue
 
-            if 'l4_tcp' in df.columns and 'l4_udp' in df.columns:
-                def infer_protocol(row):
-                    if row['l4_tcp'] == 1:
-                        return 'TCP'
-                    elif row['l4_udp'] == 1:
-                        return 'UDP'
-                    else:
-                        return 'OTHER'
-                df['protocol'] = df.apply(infer_protocol, axis=1)
-            else:
-                print(f"[SKIP] Missing 'l4_tcp' or 'l4_udp' in {file_path}")
-                continue
+            df["protocol"] = np.select(
+                [df["l4_tcp"].eq(1), df["l4_udp"].eq(1)],
+                ["TCP", "UDP"],
+                default="OTHER"
+            )
 
             df = df[numerical_columns + categorical_columns + ['src_ip', 'dst_ip', 'src_port', 'dst_port', 'protocol']].copy()
 
@@ -66,9 +69,10 @@ def preprocess_flows_as_sequences(dataset_dir, output_file, test_mode=False, row
             else:
                 raise ValueError(f"Unknown missing_strategy: {missing_strategy}")
 
-            df[numerical_columns] = (df[numerical_columns] - df[numerical_columns].min()) / (
-                df[numerical_columns].max() - df[numerical_columns].min() + 1e-6
-            )
+            for col in numerical_columns:
+                df[col] = (df[col] - GLOBAL_MEAN[col]) / (GLOBAL_STD[col] + EPS)
+
+
             df[categorical_columns] = df[categorical_columns].astype("category").apply(lambda x: x.cat.codes)
 
             group_keys = ['src_ip', 'dst_ip', 'src_port', 'dst_port', 'protocol']
