@@ -154,10 +154,16 @@ def preprocess_flows_as_sequences(
 
     # 2) Parallel I/O load (threads)
     with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count()) as tpool:
+        valid_fragments = [
+            frag for frag in dataset.get_fragments()
+            if not frag.path.endswith(":Zone.Identifier")
+        ]
+
         load_futs = [
             tpool.submit(load_fragment, frag, dataset_dir, test_mode, rows_per_file)
-            for frag in dataset.get_fragments()
+            for frag in valid_fragments
         ]
+
         loaded = [f.result() for f in load_futs if f.result() is not None]
 
     if not loaded:
