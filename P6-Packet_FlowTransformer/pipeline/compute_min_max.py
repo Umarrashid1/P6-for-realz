@@ -15,7 +15,7 @@ def compute_and_save_global_stats(dataset_dir, output_file):
 
             file_path = os.path.join(root, file)
             try:
-                df = pd.read_csv(file_path, engine="pyarrow", low_memory=False)
+                df = pd.read_csv(file_path, engine="pyarrow")
             except Exception as e:
                 print(f"[SKIP] Error reading {file_path}: {e}")
                 continue
