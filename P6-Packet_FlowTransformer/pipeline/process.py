@@ -22,8 +22,14 @@ EPS = 1e-6  # numerical safety
 # ---------------------------------------------------------------------------
 
 csv_format = ds.CsvFileFormat(
-    read_options=pv.ReadOptions(autogenerate_column_names=False)
+    read_options   = pv.ReadOptions(autogenerate_column_names=False),
+    parse_options  = pv.ParseOptions(delimiter=","),
+    convert_options= pv.ConvertOptions(
+        invalid_values_as_null=True,   # ← key line
+        strings_can_be_null=True       # keep if you like
+    )
 )
+
 
 
 def load_fragment(fragment, dataset_dir: str, test_mode: bool, rows_per_file: int):
