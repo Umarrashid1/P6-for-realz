@@ -15,7 +15,7 @@ def split_dataset_three_ways(dataset, val_ratio=0.1, test_ratio=0.1):
 
 
 # Load sequence dataset
-dataset_path = "../../dataset/packet.pt"
+dataset_path = "../../dataset/dummy.pt"
 full_dataset = IoTSequenceDataset(dataset_path, max_seq_len=64)
 print("Dataset loaded")
 
