@@ -32,6 +32,7 @@ def load_csv_file(file_path: str, test_mode: bool, rows_per_file: int):
     try:
         df = pd.read_csv(
             file_path,
+            low_memory=False,
             nrows=rows_per_file if test_mode and rows_per_file else None,
         )
         return df, file_path
