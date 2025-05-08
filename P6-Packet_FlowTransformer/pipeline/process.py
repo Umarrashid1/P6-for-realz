@@ -28,19 +28,17 @@ def list_csv_files(dataset_dir: str) -> List[str]:
     ]
 
 def load_csv_file(file_path: str, test_mode: bool, rows_per_file: int):
-    """Read a single CSV file into a DataFrame with error handling."""
+    """Efficiently read a limited number of rows from a CSV file."""
     try:
         df = pd.read_csv(
             file_path,
-            na_values=["", "NA", "?", "inf", "nan"],
-            dtype={col: "float64" for col in numerical_columns},
+            nrows=rows_per_file if test_mode and rows_per_file else None,
         )
-        if test_mode and rows_per_file:
-            df = df.head(rows_per_file)
         return df, file_path
     except Exception as e:
         print(f"[SKIP] Could not read {file_path}: {e}")
         return None
+
 
 def process_fragment(args) -> Tuple[List[np.ndarray], List[int], List[np.ndarray]]:
     """CPU‑bound per‑file preprocessing executed in a *separate process*."""
