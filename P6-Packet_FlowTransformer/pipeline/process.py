@@ -1,10 +1,8 @@
 import os
+import glob
 import numpy as np
 import pandas as pd
 import torch
-import pyarrow.dataset as ds
-import pyarrow.csv as pv
-import pyarrow as pa
 import concurrent.futures
 from typing import List, Tuple
 
@@ -22,34 +20,27 @@ EPS = 1e-6  # numerical safety
 # ❶  Helpers
 # ---------------------------------------------------------------------------
 
-# ----- CSV format definition --------------------------------------------
-convert_options = pv.ConvertOptions(
-    column_types={c: pa.float64() for c in numerical_columns},  # lock numerics
-    strings_can_be_null=True,
-    null_values=["", "NA", "?", "inf", "nan"],
-)
-csv_format = ds.CsvFileFormat(
-    read_options=pv.ReadOptions(autogenerate_column_names=False),
-    parse_options=pv.ParseOptions(delimiter=","),
-    convert_options=convert_options,
-)
+def list_csv_files(dataset_dir: str) -> List[str]:
+    """Recursively list all CSV files in the dataset directory."""
+    return [
+        f for f in glob.glob(os.path.join(dataset_dir, "**", "*.csv"), recursive=True)
+        if not f.endswith(":Zone.Identifier")
+    ]
 
-
-
-
-def load_fragment(fragment, dataset_dir: str, test_mode: bool, rows_per_file: int):
-    """I/O‑bound loader: returns (DataFrame, full_path) or None."""
+def load_csv_file(file_path: str, test_mode: bool, rows_per_file: int):
+    """Read a single CSV file into a DataFrame with error handling."""
     try:
-        table = fragment.to_table()
+        df = pd.read_csv(
+            file_path,
+            na_values=["", "NA", "?", "inf", "nan"],
+            dtype={col: "float64" for col in numerical_columns},
+        )
         if test_mode and rows_per_file:
-            table = table.slice(0, rows_per_file)
-        df = table.to_pandas()
-        return df, os.path.join(dataset_dir, fragment.path)
+            df = df.head(rows_per_file)
+        return df, file_path
     except Exception as e:
-        print(f"[SKIP] Could not read {fragment.path}: {e}")
+        print(f"[SKIP] Could not read {file_path}: {e}")
         return None
-
-
 
 def process_fragment(args) -> Tuple[List[np.ndarray], List[int], List[np.ndarray]]:
     """CPU‑bound per‑file preprocessing executed in a *separate process*."""
@@ -116,7 +107,6 @@ def process_fragment(args) -> Tuple[List[np.ndarray], List[int], List[np.ndarray
         flow_features = flow_df[numerical_columns + categorical_columns].values
         flow_len = len(flow_features)
 
-        # Debug prints
         print(f"\n[INFO] Processing flow from {file_path}")
         print(f"       → Flow length: {flow_len}")
 
@@ -140,7 +130,6 @@ def process_fragment(args) -> Tuple[List[np.ndarray], List[int], List[np.ndarray
                 pkt_arrays.append(flow_features[start:end].astype(np.float32))
                 mask_arrays.append(np.ones(max_seq_len, dtype=np.float32))
                 label_list.append(label)
-            # remainder
             if (flow_len - max_seq_len) % stride != 0:
                 print(f"       → Handling remainder (last {max_seq_len} packets)")
                 pkt_arrays.append(flow_features[-max_seq_len:].astype(np.float32))
@@ -161,25 +150,19 @@ def preprocess_flows_as_sequences(
     missing_strategy="zero",
     max_seq_len=64,
 ):
-    # 1) Discover Arrow fragments (files)
-    dataset = ds.dataset(dataset_dir, format=csv_format)
+    # 1) Discover CSV files
+    file_paths = list_csv_files(dataset_dir)
 
     # 2) Parallel I/O load (threads)
     with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count()) as tpool:
-        valid_fragments = [
-            frag for frag in dataset.get_fragments()
-            if not frag.path.endswith(":Zone.Identifier")
-        ]
-
         load_futs = [
-            tpool.submit(load_fragment, frag, dataset_dir, test_mode, rows_per_file)
-            for frag in valid_fragments
+            tpool.submit(load_csv_file, file_path, test_mode, rows_per_file)
+            for file_path in file_paths
         ]
-
         loaded = [f.result() for f in load_futs if f.result() is not None]
 
     if not loaded:
-        raise RuntimeError("No fragments loaded (all skipped or failed).")
+        raise RuntimeError("No files loaded (all skipped or failed).")
 
     # 3) Parallel CPU preprocessing (processes)
     proc_args = [(df, path, missing_strategy, max_seq_len) for df, path in loaded]
@@ -206,12 +189,8 @@ def preprocess_flows_as_sequences(
         output_file,
     )
 
-    print(
-        f"\n[INFO] Preprocessing complete — saved {len(packet_tensor)} flows to {output_file}"
-    )
-    print(
-        f"[INFO] Shape: packets {packet_tensor.shape}, labels {label_tensor.shape}"
-    )
+    print(f"\n[INFO] Preprocessing complete — saved {len(packet_tensor)} flows to {output_file}")
+    print(f"[INFO] Shape: packets {packet_tensor.shape}, labels {label_tensor.shape}")
 
 # ---------------------------------------------------------------------------
 # ❸  Label helper (unchanged)
