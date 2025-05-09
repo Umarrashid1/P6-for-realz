@@ -4,14 +4,14 @@ import numpy as np
 import pandas as pd
 import torch
 import concurrent.futures
+from pathlib import Path
 from typing import List, Tuple
 import logging
 import datetime
 
-
 from .config import categorical_columns, numerical_columns, LABEL_MAPPING
 
-# ── Set up logging ──────────────────────────────────────────────────────────
+# ── Set up timestamp and logging ──────────────────────────────────────────
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 LOG_FILE = f"preprocessing_{timestamp}.log"
 
@@ -22,7 +22,9 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 
-
+# ── Create a timestamped checkpoint directory ──────────────────────────────
+CHECKPOINT_DIR = Path("checkpoints") / timestamp
+CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── LOAD GLOBAL NUMERIC STATS ───────────────────────────────────────────────
 STD_STATS_PATH = "standardization_stats.npz"
@@ -49,25 +51,25 @@ def load_csv_file(file_path: str, test_mode: bool, rows_per_file: int):
             low_memory=False,
             nrows=rows_per_file if test_mode and rows_per_file else None,
         )
-        logging.info(f"[LOADED] {file_path} — shape: {df.shape}")  # ✱ LOGGING ADDED
+        logging.info(f"[LOADED] {file_path} — shape: {df.shape}")
         return df, file_path
     except Exception as e:
-        logging.warning(f"[SKIP] Could not read {file_path}: {e}")  # ✱ LOGGING ADDED
+        logging.warning(f"[SKIP] Could not read {file_path}: {e}")
         return None
 
-def process_fragment(args) -> Tuple[List[np.ndarray], List[int], List[np.ndarray]]:
+def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.ndarray]]:
     df, file_path, missing_strategy, max_seq_len = args
 
     label = find_label_from_path(file_path)
     if label == -1:
-        logging.warning(f"[SKIP] No label for: {file_path}")  # ✱ LOGGING ADDED
-        return [], [], []
+        logging.warning(f"[SKIP] No label for: {file_path}")
+        return file_path, [], [], []
 
     required_flow_cols = ["src_ip", "dst_ip", "src_port", "dst_port"]
     missing_cols = [c for c in numerical_columns + categorical_columns if c not in df.columns]
     if missing_cols or any(c not in df.columns for c in required_flow_cols):
-        logging.warning(f"[SKIP] Missing columns in {file_path}: {missing_cols}")  # ✱ LOGGING ADDED
-        return [], [], []
+        logging.warning(f"[SKIP] Missing columns in {file_path}: {missing_cols}")
+        return file_path, [], [], []
 
     df["protocol"] = np.select(
         [df["l4_tcp"].eq(1), df["l4_udp"].eq(1)], ["TCP", "UDP"], default="OTHER"
@@ -112,7 +114,11 @@ def process_fragment(args) -> Tuple[List[np.ndarray], List[int], List[np.ndarray
 
     flow_lengths = [len(g) for _, g in flow_groups]
     protocol_counts = df["protocol"].value_counts().to_dict()
-    logging.info(f"[METRICS] {file_path} — {len(flow_lengths)} flows, avg len {np.mean(flow_lengths):.1f}, max len {np.max(flow_lengths)}, protocols: {protocol_counts}")  # ✱ LOGGING ADDED
+    logging.info(
+        f"[METRICS] {file_path} — {len(flow_lengths)} flows, "
+        f"avg len {np.mean(flow_lengths):.1f}, max len {np.max(flow_lengths)}, "
+        f"protocols: {protocol_counts}"
+    )
 
     pkt_arrays: List[np.ndarray] = []
     label_list: List[int] = []
@@ -132,7 +138,6 @@ def process_fragment(args) -> Tuple[List[np.ndarray], List[int], List[np.ndarray
             label_list.append(label)
         else:
             stride = max_seq_len // 2
-            num_chunks = (flow_len - max_seq_len) // stride + 1
             for start in range(0, flow_len - max_seq_len + 1, stride):
                 end = start + max_seq_len
                 pkt_arrays.append(flow_features[start:end].astype(np.float32))
@@ -143,72 +148,96 @@ def process_fragment(args) -> Tuple[List[np.ndarray], List[int], List[np.ndarray
                 mask_arrays.append(np.ones(max_seq_len, dtype=np.float32))
                 label_list.append(label)
 
-    return pkt_arrays, label_list, mask_arrays
+    return file_path, pkt_arrays, label_list, mask_arrays
 
 # ---------------------------------------------------------------------------
-# ❷  Main driver
+# ❷ Main driver with checkpointing
 # ---------------------------------------------------------------------------
 
 def preprocess_flows_as_sequences(
-    dataset_dir,
-    output_file,
-    test_mode=False,
-    rows_per_file=20000,
-    missing_strategy="zero",
-    max_seq_len=64,
+    dataset_dir: str,
+    output_file: str,
+    test_mode: bool = False,
+    rows_per_file: int = 20000,
+    missing_strategy: str = "zero",
+    max_seq_len: int = 64,
 ):
-    file_paths = list_csv_files(dataset_dir)
-    logging.info(f"[START] Found {len(file_paths)} CSV files.")  # ✱ LOGGING ADDED
+    # 1) list and load
+    all_files = list_csv_files(dataset_dir)
+    logging.info(f"[START] Found {len(all_files)} CSV files (to scan checkpoints: {CHECKPOINT_DIR}).")
 
+    # 2) filter out already processed files
+    pending = []
+    for p in all_files:
+        shard_path = CHECKPOINT_DIR / (Path(p).stem + ".pt")
+        if not shard_path.exists():
+            pending.append(p)
+    logging.info(f"[CHECKPOINT] {len(pending)} files pending processing.")
+
+    # 3) load CSVs in threads
     with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count()) as tpool:
         load_futs = [
-            tpool.submit(load_csv_file, file_path, test_mode, rows_per_file)
-            for file_path in file_paths
+            tpool.submit(load_csv_file, fp, test_mode, rows_per_file)
+            for fp in pending
         ]
         loaded = [f.result() for f in load_futs if f.result() is not None]
 
-    if not loaded:
-        raise RuntimeError("No files loaded (all skipped or failed).")
+    if not loaded and not list(CHECKPOINT_DIR.glob("*.pt")):
+        raise RuntimeError("No files loaded and no checkpoints found.")
+    logging.info(f"[LOAD COMPLETE] {len(loaded)} new files loaded.")
 
-    logging.info(f"[LOAD COMPLETE] {len(loaded)} files successfully loaded.")  # ✱ LOGGING ADDED
-
+    # 4) process and checkpoint shards
     proc_args = [(df, path, missing_strategy, max_seq_len) for df, path in loaded]
-    pkt_list: List[np.ndarray] = []
-    lbl_list: List[int] = []
-    msk_list: List[np.ndarray] = []
 
     with concurrent.futures.ProcessPoolExecutor(max_workers=os.cpu_count()) as ppool:
-        for pkt_arrs, lbls, masks in ppool.map(process_fragment, proc_args, chunksize=1):
-            pkt_list.extend(pkt_arrs)
-            lbl_list.extend(lbls)
-            msk_list.extend(masks)
+        for file_path, pkt_arrs, lbls, masks in ppool.map(process_fragment, proc_args, chunksize=1):
+            if not pkt_arrs:
+                continue
+            shard = {
+                "packet_seq": torch.tensor(np.stack(pkt_arrs), dtype=torch.float32),
+                "label":      torch.tensor(lbls,             dtype=torch.long),
+                "attention_mask": torch.tensor(np.stack(masks), dtype=torch.float32),
+            }
+            shard_path = CHECKPOINT_DIR / (Path(file_path).stem + ".pt")
+            torch.save(shard, shard_path)
+            logging.info(f"[CKPT] wrote {shard_path} ({len(lbls)} seqs)")
 
-    if not pkt_list:
-        raise RuntimeError("No flows found after preprocessing.")
+    # 5) merge all shards into final output
+    shard_files = sorted(CHECKPOINT_DIR.glob("*.pt"))
+    if not shard_files:
+        raise RuntimeError("No checkpoint shards to merge.")
 
-    packet_tensor = torch.tensor(np.stack(pkt_list), dtype=torch.float32)
-    label_tensor = torch.tensor(lbl_list, dtype=torch.long)
-    attention_mask_tensor = torch.tensor(np.stack(msk_list), dtype=torch.float32)
+    pkt_tensors, lbl_tensors, msk_tensors = [], [], []
+    for sf in shard_files:
+        data = torch.load(sf)
+        pkt_tensors.append(data["packet_seq"])
+        lbl_tensors.append(data["label"])
+        msk_tensors.append(data["attention_mask"])
+
+    packet_tensor        = torch.cat(pkt_tensors, dim=0)
+    label_tensor         = torch.cat(lbl_tensors,  dim=0)
+    attention_mask_tensor = torch.cat(msk_tensors, dim=0)
 
     torch.save(
-        {"packet_seq": packet_tensor, "label": label_tensor, "attention_mask": attention_mask_tensor},
+        {"packet_seq": packet_tensor,
+         "label": label_tensor,
+         "attention_mask": attention_mask_tensor},
         output_file,
     )
+    logging.info(f"[DONE] Merged {len(packet_tensor)} sequences into {output_file}")
 
-    logging.info(f"[DONE] Saved {len(packet_tensor)} flows to {output_file}")  # ✱ LOGGING ADDED
-    logging.info(f"[SHAPES] packets: {packet_tensor.shape}, labels: {label_tensor.shape}")  # ✱ LOGGING ADDED
-
-    label_counts = np.bincount(lbl_list)
-    for label_id, count in enumerate(label_counts):
-        logging.info(f"[LABEL] class {label_id}: {count} sequences")  # ✱ LOGGING ADDED
+    # 6) log class counts
+    label_counts = np.bincount(label_tensor.numpy())
+    for lbl_id, cnt in enumerate(label_counts):
+        logging.info(f"[LABEL] class {lbl_id}: {cnt} seqs")
 
 # ---------------------------------------------------------------------------
 # ❸  Label helper (unchanged)
 # ---------------------------------------------------------------------------
 
-def find_label_from_path(file_path):
+def find_label_from_path(file_path: str) -> int:
     current_path = os.path.dirname(file_path)
-    while current_path != os.path.dirname(current_path):
+    while current_path and current_path != os.path.dirname(current_path):
         folder_name = os.path.basename(current_path)
         for key in LABEL_MAPPING:
             if key.lower() in folder_name.lower():
