@@ -1,26 +1,61 @@
 # pipeline/iot_dataset.py
+"""PyTorch Dataset for pre‑batched IoT flow sequences.
+
+Returns a dict compatible with the updated training loop:
+    {
+        'packet_seq':      FloatTensor [T, F_num],
+        'attention_mask':  FloatTensor [T],
+        'label':           LongTensor,
+        'cat_<col1>':      LongTensor [T],
+        'cat_<col2>':      LongTensor [T],
+        ...
+    }
+
+Assumes `preprocess_flows_as_sequences()` saved one tensor per categorical column.
+"""
+
+from pathlib import Path
 import torch
 from torch.utils.data import Dataset
 
-class IoTSequenceDataset(Dataset):
-    def __init__(self, pt_file_path, max_seq_len=64):
-        data = torch.load(pt_file_path)
+from ..config import categorical_columns  # adjust import path if different
 
-        self.packet_seqs = data["packet_seq"]         # shape: [N, T, F]
-        self.labels = data["label"]                   # shape: [N]
-        self.attention_masks = data["attention_mask"] # shape: [N, T]
+class IoTSequenceDataset(Dataset):
+    """Loads the merged .pt file and yields item‑level tensors."""
+
+    def __init__(self, pt_file_path: str | Path, max_seq_len: int = 64):
+        data = torch.load(pt_file_path, map_location="cpu")
+
+        # Base tensors
+        self.packet_seqs     = data["packet_seq"]       # [N, T, F_num]
+        self.labels          = data["label"]            # [N]
+        self.attention_masks = data["attention_mask"]   # [N, T]
+        self.cat_tensors     = {col: data[col] for col in categorical_columns}
+
         self.max_seq_len = max_seq_len
 
-        # Ensure all sequences are of the same length
+        # Sanity checks ----------------------------------------------------
         if self.packet_seqs.shape[1] != max_seq_len:
-            raise ValueError(f"Expected sequence length {max_seq_len}, but got {self.packet_seqs.shape[1]}.")
+            raise ValueError(
+                f"Expected sequence length {max_seq_len}, "
+                f"but got {self.packet_seqs.shape[1]}.")
+        for col, tensor in self.cat_tensors.items():
+            if tensor.shape[1] != max_seq_len:
+                raise ValueError(
+                    f"Categorical column '{col}' length mismatch: "
+                    f"got {tensor.shape[1]} expected {max_seq_len}.")
 
+    # ---------------------------------------------------------------------
     def __len__(self):
         return len(self.labels)
 
     def __getitem__(self, idx):
-        return {
-            "packet_seq": self.packet_seqs[idx],        # [T, F]
-            "label": self.labels[idx],
-            "attention_mask": self.attention_masks[idx] # [T]
+        item = {
+            "packet_seq":     self.packet_seqs[idx],
+            "attention_mask": self.attention_masks[idx],
+            "label":          self.labels[idx],
         }
+        # Attach categorical ids
+        for col in categorical_columns:
+            item[col] = self.cat_tensors[col][idx]
+        return item
