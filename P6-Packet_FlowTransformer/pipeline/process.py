@@ -12,6 +12,7 @@ from .config import categorical_columns, numerical_columns, LABEL_MAPPING
 from utils.category_mapping import build_category_mappings, save_mappings, load_mappings
 
 
+
 # ── Set up timestamp and logging ──────────────────────────────────────────
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 LOG_FILE = f"preprocessing_{timestamp}.log"
@@ -66,7 +67,7 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
     missing_cols = [c for c in numerical_columns + categorical_columns if c not in df.columns]
     if missing_cols or any(c not in df.columns for c in required_flow_cols):
         logging.warning(f"[SKIP] Missing columns in {file_path}: {missing_cols}")
-        return file_path, [], [], [], {}
+        return file_path, [], [], []
 
     df["protocol"] = np.select(
         [df["l4_tcp"].eq(1), df["l4_udp"].eq(1)], ["TCP", "UDP"], default="OTHER"
@@ -153,12 +154,14 @@ def preprocess_flows_as_sequences(
     missing_strategy: str = "zero",
     max_seq_len: int = 64,
 ):
+    # 1) list and load
     all_files = list_csv_files(dataset_dir)
     logging.info(f"[START] Found {len(all_files)} CSV files.")
 
     pending = [f for f in all_files if not (CHECKPOINT_DIR / (Path(f).stem + ".pt")).exists()]
     logging.info(f"[CHECKPOINT] {len(pending)} files pending processing.")
 
+    # 3) load CSVs in threads
     with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count()) as tpool:
         loaded = [f.result() for f in [tpool.submit(load_csv_file, fp, test_mode, rows_per_file) for fp in pending] if f.result() is not None]
 

@@ -10,7 +10,7 @@ preprocess_flows_as_sequences(
     dataset_dir=DATASET_DIR,
     output_file=str(OUTPUT_FILE),
     test_mode=True,
-    rows_per_file=300000
+    rows_per_file=1000
 )
 
 print("Pipeline completed successfully.")
