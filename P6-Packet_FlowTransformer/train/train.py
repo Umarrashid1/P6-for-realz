@@ -1,4 +1,4 @@
-# train/train.py
+import os
 from torch.utils.data import DataLoader
 import torch
 import torch.nn as nn
@@ -6,7 +6,7 @@ import torch.optim as optim
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 import numpy as np
 
-
+from .config import categorical_columns  # import your categorical column names
 
 
 def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1e-3, device='cuda'):
@@ -25,22 +25,23 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
 
         for batch in train_loader:
             packet_seq = batch['packet_seq'].to(device)  # [B, T, F]
+            attention_mask = batch['attention_mask'].to(device)
             labels = batch['label'].to(device)
 
+            # gather categorical features dict
+            cat_feats = {col: batch[col].to(device) for col in categorical_columns}
+
             optimizer.zero_grad()
-            attention_mask = batch['attention_mask'].to(device)
-            outputs = model(packet_seq, attention_mask=attention_mask)
+            outputs = model(packet_seq, cat_feats, attention_mask=attention_mask)
 
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
 
-
             total_loss += loss.item()
             preds = torch.argmax(outputs, dim=1)
             all_preds.extend(preds.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
-
 
         train_acc = accuracy_score(all_labels, all_preds)
 
@@ -50,15 +51,14 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
 
         with torch.no_grad():
             for batch in val_loader:
-
-                labels = batch['label'].to(device)
-
                 packet_seq = batch['packet_seq'].to(device)
                 attention_mask = batch['attention_mask'].to(device)
-                outputs = model(packet_seq, attention_mask=attention_mask)
+                labels = batch['label'].to(device)
+
+                cat_feats = {col: batch[col].to(device) for col in categorical_columns}
+                outputs = model(packet_seq, cat_feats, attention_mask=attention_mask)
 
                 preds = torch.argmax(outputs, dim=1)
-
                 val_preds.extend(preds.cpu().numpy())
                 val_labels.extend(labels.cpu().numpy())
 
@@ -67,6 +67,7 @@ def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1
         print(f"Epoch {epoch+1}/{epochs} - Loss: {total_loss:.4f} - Train Acc: {train_acc:.4f} - Val Acc: {val_acc:.4f}")
         torch.save(model.state_dict(), "iot_transformer_pretrained.pt")
         print("Saved pretrained model for finetuning.")
+
 
 
 def test_model(model, test_dataset, batch_size=64, device='cuda'):
@@ -79,9 +80,11 @@ def test_model(model, test_dataset, batch_size=64, device='cuda'):
     with torch.no_grad():
         for batch in test_loader:
             packet_seq = batch['packet_seq'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
             labels = batch['label'].to(device)
 
-            outputs = model(packet_seq, attention_mask=batch['attention_mask'].to(device))
+            cat_feats = {col: batch[col].to(device) for col in categorical_columns}
+            outputs = model(packet_seq, cat_feats, attention_mask=attention_mask)
             preds = torch.argmax(outputs, dim=1)
 
             all_preds.extend(preds.cpu().numpy())
