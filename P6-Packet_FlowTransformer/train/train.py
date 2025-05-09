@@ -5,8 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 import numpy as np
-
-from .config import categorical_columns  # import your categorical column names
+from pipeline.config import categorical_columns
 
 
 def train_model(model, train_dataset, val_dataset, epochs=3, batch_size=64, lr=1e-3, device='cuda'):
