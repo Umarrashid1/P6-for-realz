@@ -18,7 +18,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import Dataset
 
-from ..config import categorical_columns  # adjust import path if different
+from .config import categorical_columns  # adjust import path if different
 
 class IoTSequenceDataset(Dataset):
     """Loads the merged .pt file and yields item‑level tensors."""
