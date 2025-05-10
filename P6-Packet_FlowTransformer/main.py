@@ -24,10 +24,13 @@ print("Dataset loaded")
 # Init Transformer
 cat_map   = load_mappings()
 cat_sizes = {col: len(cat_map[col]) for col in categorical_columns}
+cat_pad   = {c: cat_map[c]["unknown"] for c in categorical_columns}
+
 
 model = IoTTransformer(
     input_dim=len(numerical_columns),
     cat_sizes=cat_sizes,
+    cat_padding_idx=cat_pad,
     embed_dim=64,
     num_heads=4,
     num_layers=2,
@@ -35,6 +38,7 @@ model = IoTTransformer(
     num_classes=8,
     max_seq_len=64,
 )
+
 
 # Split into train/val/test
 train_dataset, val_dataset, test_dataset = split_dataset_three_ways(full_dataset)
