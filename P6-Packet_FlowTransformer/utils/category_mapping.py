@@ -44,4 +44,4 @@ def load_category_mappings(path="category_mappings.json"):
 
 
 if __name__ == "__main__":
-    generate_and_save_category_mappings(dataset_dir="../../../dataset/raw_dataset")  # Removed extra quote
+    generate_and_save_category_mappings(dataset_dir="../../dataset/raw_dataset")  # Removed extra quote
