@@ -1,6 +1,5 @@
 import os
 import json
-import logging
 import pandas as pd
 import concurrent.futures
 from pathlib import Path
@@ -30,7 +29,7 @@ def generate_and_save_category_mappings(dataset_dir: str, test_mode: bool = Fals
             str_vals.append("unknown")
         mappings[col] = {val: idx for idx, val in enumerate(str_vals)}
 
-        logging.info(f"[MAPPING] {col}: {len(mappings[col])} categories (including 'unknown')")
+        print(f"[MAPPING] {col}: {len(mappings[col])} categories (including 'unknown')")
 
     with open(path, "w") as f:
         json.dump(mappings, f)
@@ -38,7 +37,7 @@ def generate_and_save_category_mappings(dataset_dir: str, test_mode: bool = Fals
     return mappings
 
 
-def load_category_mappings(path="category_mappings.json"):
+def load_mappings(path="category_mappings.json"):
     with open(path, "r") as f:
         return json.load(f)
 

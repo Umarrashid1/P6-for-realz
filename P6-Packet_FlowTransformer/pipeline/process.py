@@ -10,7 +10,8 @@ import logging
 import datetime
 from .config import categorical_columns, numerical_columns, LABEL_MAPPING
 from ..utils import io_utils
-from utils.category_mapping import build_category_mappings, save_mappings, load_mappings
+from ..utils import category_mapping
+
 
 
 
@@ -85,7 +86,7 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
     for col in numerical_columns:
         df[col] = (df[col] - GLOBAL_MEAN[col]) / (GLOBAL_STD[col] + EPS)
 
-    cat_mappings = load_mappings()
+    cat_mappings = category_mapping.load_mappings()
     for col in categorical_columns:
         mapping = cat_mappings[col]
         unknown_id = mapping["unknown"]  # guaranteed to exist if you built the mappings correctly
@@ -154,13 +155,6 @@ def preprocess_flows_as_sequences(
     if not loaded and not list(CHECKPOINT_DIR.glob("*.pt")):
         raise RuntimeError("No files loaded and no checkpoints found.")
 
-
-    # Build and save category mappings
-    combined_df = pd.concat([df for df, _ in loaded], ignore_index=True)
-    cat_mappings = build_category_mappings(combined_df, categorical_columns)
-    save_mappings(cat_mappings)
-    for col, mapping in cat_mappings.items():
-        logging.info(f"[MAPPING] {col}: {len(mapping)} unique categories")
 
 
 
