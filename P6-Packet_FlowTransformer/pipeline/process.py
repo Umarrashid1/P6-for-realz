@@ -9,6 +9,7 @@ from typing import List, Tuple
 import logging
 import datetime
 from .config import categorical_columns, numerical_columns, LABEL_MAPPING
+from ..utils import io_utils
 from utils.category_mapping import build_category_mappings, save_mappings, load_mappings
 
 
@@ -37,24 +38,7 @@ GLOBAL_STD = dict(zip(STD_COLS, _std_stats["std"]))
 EPS = 1e-6  # Numerical safety
 
 # ──────────────────────────────────────────────────────────────────────────────
-def list_csv_files(dataset_dir: str) -> List[str]:
-    return [
-        f for f in glob.glob(os.path.join(dataset_dir, "**", "*.csv"), recursive=True)
-        if not f.endswith(":Zone.Identifier")
-    ]
 
-def load_csv_file(file_path: str, test_mode: bool, rows_per_file: int):
-    try:
-        df = pd.read_csv(
-            file_path,
-            low_memory=False,
-            nrows=rows_per_file if test_mode and rows_per_file else None,
-        )
-        logging.info(f"[LOADED] {file_path} — shape: {df.shape}")
-        return df, file_path
-    except Exception as e:
-        logging.warning(f"[SKIP] Could not read {file_path}: {e}")
-        return None
 
 def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.ndarray], dict]:
     df, file_path, missing_strategy, max_seq_len = args
@@ -103,7 +87,9 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
 
     cat_mappings = load_mappings()
     for col in categorical_columns:
-        df[col] = df[col].map(cat_mappings[col]).fillna(-1).astype(int)
+        mapping = cat_mappings[col]
+        unknown_id = mapping["unknown"]  # guaranteed to exist if you built the mappings correctly
+        df[col] = df[col].map(mapping).fillna(unknown_id).astype(int)
 
     group_keys = ["src_ip", "dst_ip", "src_port", "dst_port", "protocol"]
     flow_groups = df.groupby(group_keys, sort=False)
@@ -155,7 +141,7 @@ def preprocess_flows_as_sequences(
     max_seq_len: int = 64,
 ):
     # 1) list and load
-    all_files = list_csv_files(dataset_dir)
+    all_files = io_utils.list_csv_files(dataset_dir)
     logging.info(f"[START] Found {len(all_files)} CSV files.")
 
     pending = [f for f in all_files if not (CHECKPOINT_DIR / (Path(f).stem + ".pt")).exists()]
@@ -163,7 +149,7 @@ def preprocess_flows_as_sequences(
 
     # 3) load CSVs in threads
     with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count()) as tpool:
-        loaded = [f.result() for f in [tpool.submit(load_csv_file, fp, test_mode, rows_per_file) for fp in pending] if f.result() is not None]
+        loaded = [f.result() for f in [tpool.submit(io_utils.load_csv_file, fp, test_mode, rows_per_file) for fp in pending] if f.result() is not None]
 
     if not loaded and not list(CHECKPOINT_DIR.glob("*.pt")):
         raise RuntimeError("No files loaded and no checkpoints found.")
@@ -175,6 +161,8 @@ def preprocess_flows_as_sequences(
     save_mappings(cat_mappings)
     for col, mapping in cat_mappings.items():
         logging.info(f"[MAPPING] {col}: {len(mapping)} unique categories")
+
+
 
     proc_args = [(df, path, missing_strategy, max_seq_len) for df, path in loaded]
 
