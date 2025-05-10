@@ -28,7 +28,6 @@ def generate_and_save_category_mappings(dataset_dir: str, test_mode: bool = Fals
         if "unknown" not in str_vals:
             str_vals.append("unknown")
         mappings[col] = {val: idx for idx, val in enumerate(str_vals)}
-
         print(f"[MAPPING] {col}: {len(mappings[col])} categories (including 'unknown')")
 
     with open(path, "w") as f:

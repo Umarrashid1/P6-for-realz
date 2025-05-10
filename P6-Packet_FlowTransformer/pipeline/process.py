@@ -9,8 +9,8 @@ from typing import List, Tuple
 import logging
 import datetime
 from .config import categorical_columns, numerical_columns, LABEL_MAPPING
-from ..utils import io_utils
-from ..utils import category_mapping
+from utils import io_utils
+from utils import category_mapping
 
 
 
