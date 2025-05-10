@@ -120,7 +120,8 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
             mask_arrays.append(np.concatenate([np.ones(flow_len), np.zeros(pad_len)]).astype(np.float32))
             label_list.append(label)
             for col in categorical_columns:
-                padded = np.pad(cat_feat[col], (0, pad_len), constant_values=-1)
+                unknown_id = cat_mappings[col]["unknown"]
+                padded = np.pad(cat_feat[col], (0, pad_len), constant_values=unknown_id)
                 cat_arrays[col].append(padded.astype(np.int64))
         else:
             stride = max_seq_len // 2
