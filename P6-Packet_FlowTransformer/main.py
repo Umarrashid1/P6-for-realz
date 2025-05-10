@@ -4,6 +4,8 @@ from models.transformer import IoTTransformer
 from train.train import train_model, test_model
 from torch.utils.data import random_split
 import torch
+from utils.category_mapping import load_mappings
+from pipeline.config import categorical_columns, numerical_columns
 
 
 def split_dataset_three_ways(dataset, val_ratio=0.1, test_ratio=0.1):
@@ -20,15 +22,18 @@ full_dataset = IoTSequenceDataset(dataset_path, max_seq_len=64)
 print("Dataset loaded")
 
 # Init Transformer
-sample_input_dim = full_dataset[0]["packet_seq"].shape[1]  # F
+cat_map   = load_mappings()
+cat_sizes = {col: len(cat_map[col]) for col in categorical_columns}
+
 model = IoTTransformer(
-    input_dim=sample_input_dim,
+    input_dim=len(numerical_columns),
+    cat_sizes=cat_sizes,
     embed_dim=64,
     num_heads=4,
     num_layers=2,
     dropout=0.1,
     num_classes=8,
-    max_seq_len=64
+    max_seq_len=64,
 )
 
 # Split into train/val/test
