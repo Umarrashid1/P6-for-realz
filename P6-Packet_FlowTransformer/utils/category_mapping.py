@@ -4,8 +4,8 @@ import logging
 import pandas as pd
 import concurrent.futures
 from pathlib import Path
-import io_utils
-from ..pipeline.config import categorical_columns
+from . import io_utils
+from pipeline.config import categorical_columns
 
 
 def generate_and_save_category_mappings(dataset_dir: str, test_mode: bool = False, rows_per_file: int = 20000, path="category_mappings.json"):
@@ -43,4 +43,5 @@ def load_category_mappings(path="category_mappings.json"):
         return json.load(f)
 
 
-generate_and_save_category_mappings(dataset_dir="../../../dataset/raw_dataset'")
+if __name__ == "__main__":
+    generate_and_save_category_mappings(dataset_dir="../../../dataset/raw_dataset")  # Removed extra quote
