@@ -16,7 +16,8 @@ def compute_and_save_global_stats(dataset_dir, output_file):
 
             file_path = os.path.join(root, file)
             try:
-                df = pd.read_csv(file_path, engine="pyarrow", usecols=numerical_columns).astype("float32")
+                # Read all columns to allow patching missing ones
+                df = pd.read_csv(file_path, engine="pyarrow").astype("float32")
             except Exception as e:
                 print(f"[SKIP] Error reading {file_path}: {e}")
                 continue
@@ -24,16 +25,23 @@ def compute_and_save_global_stats(dataset_dir, output_file):
             if df.empty:
                 continue
 
+            # Add missing numeric columns as NaNs
+            missing = [col for col in numerical_columns if col not in df.columns]
+            for col in missing:
+                df[col] = np.nan
+
+            df = df[numerical_columns]  # Ensure consistent order
+
             # 1️⃣ Robust clipping to avoid extreme outliers
             low_clip = df.quantile(0.001)
             high_clip = df.quantile(0.999)
             df = df.clip(lower=low_clip, upper=high_clip, axis=1)
 
-            # 2️⃣ Fill any remaining NaNs with per-column medians
+            # 2️⃣ Fill remaining NaNs with per-column medians
             df = df.fillna(df.median())
 
             # 3️⃣ Accumulate stats
-            arr = df[numerical_columns].values
+            arr = df.values
             sum_vals += np.sum(arr, axis=0)
             sum_sqs += np.sum(arr ** 2, axis=0)
             count_vals += arr.shape[0]
