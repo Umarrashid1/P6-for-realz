@@ -86,7 +86,14 @@ def train_model(
             labels = batch["label"].to(device)
             cat_feats = {c: batch[c].to(device) for c in categorical_columns}
 
-            # ── Finite‑check before forward ──────────────────────────────
+            # ── Diagnostics & finite‑check before forward ─────────────────
+            if batch_idx == 0:  # only print once per epoch
+                abs_max = float(packet_seq.abs().max())
+                print(f"Epoch {epoch:02d} Batch 0: packet_seq abs‑max = {abs_max:.3e}")
+                if abs_max > 1e3:
+                    print("⚠️  Features extremely large — check standardisation stats")
+
+            # ---- Finite check ------------------------------------------------
             if not torch.isfinite(packet_seq).all():
                 n_nan = (~torch.isfinite(packet_seq)).sum().item()
                 print(f"❌ Batch {batch_idx}: packet_seq contains {n_nan} NaNs/Infs — skipping")
