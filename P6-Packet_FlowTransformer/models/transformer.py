@@ -26,26 +26,23 @@ class IoTTransformer(nn.Module):
     ) -> None:
         super().__init__()
 
-        # ── 1. Numeric projection ────────────────────────────────────────────
+        # 1. Numeric projection
         self.packet_proj = nn.Linear(input_dim, embed_dim)
 
-        # ── 2. Learnable positional encodings ───────────────────────────────
-        # Shape: [1, T, E] so broadcasting over batch is trivial
+        # 2. Learnable positional encodings
         self.position_encoding = nn.Parameter(torch.randn(1, max_seq_len, embed_dim))
 
-        # ── 3. Column‑wise embeddings with explicit padding_idx ─────────────
-        self.cat_embeds = nn.ModuleDict(
-            {
-                col: nn.Embedding(
-                    num_embeddings=cat_sizes[col],
-                    embedding_dim=embed_dim,
-                    padding_idx=cat_padding_idx[col],
-                )
-                for col in cat_sizes
-            }
-        )
+        # 3. Column‑wise embeddings with explicit padding_idx
+        self.cat_embeds = nn.ModuleDict({
+            col: nn.Embedding(
+                num_embeddings=cat_sizes[col],
+                embedding_dim=embed_dim,
+                padding_idx=cat_padding_idx[col],
+            )
+            for col in cat_sizes
+        })
 
-        # ── 4. Transformer encoder ──────────────────────────────────────────
+        # 4. Transformer encoder
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=embed_dim,
             nhead=num_heads,
@@ -54,7 +51,7 @@ class IoTTransformer(nn.Module):
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
-        # ── 5. Classification head ──────────────────────────────────────────
+        # 5. Classification head
         self.classifier = nn.Sequential(
             nn.Linear(embed_dim, 130),
             nn.ReLU(),
@@ -62,38 +59,48 @@ class IoTTransformer(nn.Module):
             nn.Linear(130, num_classes),
         )
 
-    # ────────────────────────────────────────────────────────────────────────
+    def _check(self, tensor: torch.Tensor, name: str):
+        if torch.isnan(tensor).any():
+            raise RuntimeError(f"NaN detected in {name}")
+
     def forward(
         self,
-        packet_seq: torch.Tensor,               # [B, T, F_num]
-        cat_feats: Dict[str, torch.Tensor],     # {col: [B, T] Long}
+        packet_seq: torch.Tensor,
+        cat_feats: Dict[str, torch.Tensor],
         attention_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """Forward pass returning logits [B, num_classes]."""
+        # Project numeric features
+        x = self.packet_proj(packet_seq)
+        self._check(x, 'packet_proj')
 
-        # 1. Project numeric features to embedding space
-        x = self.packet_proj(packet_seq)  # [B, T, E]
-
-        # 2. Add categorical embeddings (with safety clamp)
+        # Add categorical embeddings
         for col, emb_layer in self.cat_embeds.items():
-            cat_input = cat_feats[col].clamp(0, emb_layer.num_embeddings - 1)
-            x = x + emb_layer(cat_input)  # broadcast add
+            ids = cat_feats[col].clamp(0, emb_layer.num_embeddings - 1)
+            emb = emb_layer(ids)
+            self._check(emb, f'emb_{col}')
+            x = x + emb
+        self._check(x, 'add_cat_embeds')
 
-        # 3. Add positional encoding
+        # Add positional encoding
         x = x + self.position_encoding[:, : x.size(1)]
+        self._check(x, 'pos_encoding')
 
-        # 4. Build key‑padding mask (True = pad)
-        key_pad_mask = (attention_mask == 0) if attention_mask is not None else None
+        # Build padding mask
+        src_key_padding_mask = (attention_mask == 0) if attention_mask is not None else None
 
-        # 5. Transformer encoder
-        x = self.transformer(x, src_key_padding_mask=key_pad_mask)  # [B, T, E]
+        # Transformer encoder
+        x = self.transformer(x, src_key_padding_mask=src_key_padding_mask)
+        self._check(x, 'transformer')
 
-        # 6. Global average pooling (mask-aware if attention_mask given)
+        # Global pooling (mask-aware)
         if attention_mask is not None:
             lengths = attention_mask.sum(dim=1, keepdim=True).clamp(min=1)
-            x = (x * attention_mask.unsqueeze(-1)).sum(dim=1) / lengths  # [B, E]
+            x = (x * attention_mask.unsqueeze(-1)).sum(dim=1) / lengths
         else:
-            x = x.mean(dim=1)  # [B, E]
+            x = x.mean(dim=1)
+        self._check(x, 'pool')
 
-        # 7. Classification head
-        return self.classifier(x)
+        # Classification head
+        logits = self.classifier(x)
+        self._check(logits, 'classifier')
+        return logits
