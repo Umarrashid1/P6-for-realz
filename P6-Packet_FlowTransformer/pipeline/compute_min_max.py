@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
-from config import numerical_columns  # List of your numeric feature columns
+from .config import numerical_columns  # List of your numeric feature columns
 
 def compute_and_save_global_stats(dataset_dir, output_file):
     n_cols = len(numerical_columns)
