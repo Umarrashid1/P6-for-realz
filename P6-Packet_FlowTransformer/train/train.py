@@ -80,20 +80,30 @@ def train_model(
         total_loss = 0.0
         correct = seen = nan_batches = 0
 
-        for batch in train_loader:
+        for batch_idx, batch in enumerate(train_loader):
             packet_seq = batch["packet_seq"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["label"].to(device)
             cat_feats = {c: batch[c].to(device) for c in categorical_columns}
 
+            # ── Finite‑check before forward ──────────────────────────────
+            if not torch.isfinite(packet_seq).all():
+                n_nan = (~torch.isfinite(packet_seq)).sum().item()
+                print(f"❌ Batch {batch_idx}: packet_seq contains {n_nan} NaNs/Infs — skipping")
+                continue
+            bad_cat = [c for c,t in cat_feats.items() if not torch.isfinite(t).all()]
+            if bad_cat:
+                print(f"❌ Batch {batch_idx}: categorical ids non‑finite in columns {bad_cat} — skipping")
+                continue
+
             optimizer.zero_grad()
-            logits = model(packet_seq, cat_feats, attention_mask=attention_mask)
+            logits = model(packet_seq, cat_feats, attention_mask=attention_mask)(packet_seq, cat_feats, attention_mask=attention_mask)
             loss = criterion(logits, labels)
 
             # ── NaN guard ────────────────────────────────────────────────
             if not torch.isfinite(loss):
                 nan_batches += 1
-                print(" NaN/Inf loss — skipping batch.  Logits min/max:",
+                print("❌ NaN/Inf loss — skipping batch.  Logits min/max:",
                       float(logits.min()), float(logits.max()))
                 continue
 
