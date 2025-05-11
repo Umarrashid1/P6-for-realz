@@ -17,7 +17,8 @@ def compute_and_save_global_stats(dataset_dir, output_file):
             file_path = os.path.join(root, file)
             try:
                 # Read all columns to allow patching missing ones
-                df = pd.read_csv(file_path, engine="pyarrow").astype("float32")
+                df = pd.read_csv(file_path, engine="pyarrow", usecols=numerical_columns).astype("float32")
+
             except Exception as e:
                 print(f"[SKIP] Error reading {file_path}: {e}")
                 continue
