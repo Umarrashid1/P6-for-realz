@@ -97,7 +97,7 @@ def train_model(
                 continue
 
             optimizer.zero_grad()
-            logits = model(packet_seq, cat_feats, attention_mask=attention_mask)(packet_seq, cat_feats, attention_mask=attention_mask)
+            logits = model(packet_seq, cat_feats, attention_mask=attention_mask)
             loss = criterion(logits, labels)
 
             # ── NaN guard ────────────────────────────────────────────────
