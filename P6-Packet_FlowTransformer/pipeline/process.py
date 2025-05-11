@@ -74,7 +74,7 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
     for col in categorical_columns:
         mapping = cat_mappings[col]
         unknown_id = mapping["unknown"]
-        df[col] = df[col].map(mapping).fillna(unknown_id).astype(int)
+        df[col] = df[col].apply(lambda x: mapping.get(x, unknown_id)).astype(int)
 
     group_keys = ["src_ip", "dst_ip", "src_port", "dst_port", "protocol"]
     flow_groups = df.groupby(group_keys, sort=False)
