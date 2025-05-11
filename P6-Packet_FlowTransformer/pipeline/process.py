@@ -12,7 +12,6 @@ from .config import categorical_columns, numerical_columns, LABEL_MAPPING
 from utils import io_utils
 from utils import category_mapping
 
-
 # ── Set up timestamp and logging ──────────────────────────────────────────
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 LOG_FILE = f"preprocessing_{timestamp}.log"
@@ -34,13 +33,15 @@ _std_stats = np.load(STD_STATS_PATH)
 STD_COLS = _std_stats["cols"].tolist()
 GLOBAL_MEAN = dict(zip(STD_COLS, _std_stats["mean"]))
 GLOBAL_STD = dict(zip(STD_COLS, _std_stats["std"]))
-EPS = 1e-6  # Numerical safety
+GLOBAL_MEDIAN = dict(zip(STD_COLS, _std_stats["median"]))
+CLIP_LOW = dict(zip(STD_COLS, _std_stats["clip_low"]))
+CLIP_HIGH = dict(zip(STD_COLS, _std_stats["clip_high"]))
+EPS = 1e-6
 
 # ──────────────────────────────────────────────────────────────────────────────
 
-
 def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.ndarray], dict]:
-    df, file_path, missing_strategy, max_seq_len = args
+    df, file_path, max_seq_len = args
     label = find_label_from_path(file_path)
     if label == -1:
         logging.warning(f"[SKIP] No label for: {file_path}")
@@ -50,7 +51,7 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
     missing_cols = [c for c in numerical_columns + categorical_columns if c not in df.columns]
     if missing_cols or any(c not in df.columns for c in required_flow_cols):
         logging.warning(f"[SKIP] Missing columns in {file_path}: {missing_cols}")
-        return file_path, [], [], []
+        return file_path, [], [], [], {}
 
     df["protocol"] = np.select(
         [df["l4_tcp"].eq(1), df["l4_udp"].eq(1)], ["TCP", "UDP"], default="OTHER"
@@ -61,34 +62,18 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
         ["src_ip", "dst_ip", "src_port", "dst_port", "protocol"]
     ].copy()
 
-    # Fill missing values
-    if missing_strategy == "mean":
-        for col in numerical_columns:
-            df[col].fillna(df[col].mean(), inplace=True)
-        for col in categorical_columns:
-            df[col].fillna(df[col].mode().iloc[0], inplace=True)
-    elif missing_strategy == "median":
-        for col in numerical_columns:
-            df[col].fillna(df[col].median(), inplace=True)
-        for col in categorical_columns:
-            df[col].fillna(df[col].mode().iloc[0], inplace=True)
-    elif missing_strategy == "zero":
-        df[numerical_columns] = df[numerical_columns].fillna(0)
-        df[categorical_columns] = df[categorical_columns].fillna("unknown")
-    elif missing_strategy == "ffill":
-        df.fillna(method="ffill", inplace=True)
-    else:
-        raise ValueError(f"Unknown missing_strategy: {missing_strategy}")
-
-
-    # Standardize numerical features
+    # Clip, fill, and standardize using global stats
     for col in numerical_columns:
+        df[col] = df[col].clip(lower=CLIP_LOW[col], upper=CLIP_HIGH[col])
+        df[col] = df[col].fillna(GLOBAL_MEDIAN[col])
         df[col] = (df[col] - GLOBAL_MEAN[col]) / (GLOBAL_STD[col] + EPS)
+
+    df[categorical_columns] = df[categorical_columns].fillna("unknown")
 
     cat_mappings = category_mapping.load_mappings()
     for col in categorical_columns:
         mapping = cat_mappings[col]
-        unknown_id = mapping["unknown"]  # guaranteed to exist if you built the mappings correctly
+        unknown_id = mapping["unknown"]
         df[col] = df[col].map(mapping).fillna(unknown_id).astype(int)
 
     group_keys = ["src_ip", "dst_ip", "src_port", "dst_port", "protocol"]
@@ -138,27 +123,21 @@ def preprocess_flows_as_sequences(
     output_file: str,
     test_mode: bool = False,
     rows_per_file: int = 20000,
-    missing_strategy: str = "zero",
     max_seq_len: int = 64,
 ):
-    # 1) list and load
     all_files = io_utils.list_csv_files(dataset_dir)
     logging.info(f"[START] Found {len(all_files)} CSV files.")
 
     pending = [f for f in all_files if not (CHECKPOINT_DIR / (Path(f).stem + ".pt")).exists()]
     logging.info(f"[CHECKPOINT] {len(pending)} files pending processing.")
 
-    # 3) load CSVs in threads
     with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count()) as tpool:
         loaded = [f.result() for f in [tpool.submit(io_utils.load_csv_file, fp, test_mode, rows_per_file) for fp in pending] if f.result() is not None]
 
     if not loaded and not list(CHECKPOINT_DIR.glob("*.pt")):
         raise RuntimeError("No files loaded and no checkpoints found.")
 
-
-
-
-    proc_args = [(df, path, missing_strategy, max_seq_len) for df, path in loaded]
+    proc_args = [(df, path, max_seq_len) for df, path in loaded]
 
     with concurrent.futures.ProcessPoolExecutor(max_workers=os.cpu_count()) as ppool:
         for file_path, pkt_arrs, lbls, masks, cat_arrs in ppool.map(process_fragment, proc_args, chunksize=1):
@@ -174,7 +153,6 @@ def preprocess_flows_as_sequences(
             torch.save(shard, CHECKPOINT_DIR / (Path(file_path).stem + ".pt"))
             logging.info(f"[CKPT] wrote {file_path}")
 
-    # Merge
     pkt_tensors, lbl_tensors, msk_tensors = [], [], []
     cat_tensors = {col: [] for col in categorical_columns}
 
