@@ -29,8 +29,8 @@ BASE_DIR = Path(__file__).resolve().parent  # Assumes script is in some project 
 # Or define it absolutely if running from an arbitrary location:
 # BASE_DIR = Path("/path/to/your/project_root_or_where_script_is")
 
-DATASET_DIR = BASE_DIR / "../../dataset/raw_dataset"
-OUTPUT_DIR = BASE_DIR / "../../dataset/standardized_dataset"
+DATASET_DIR = BASE_DIR / "../../../dataset/raw_dataset"
+OUTPUT_DIR = BASE_DIR / "../../../dataset/standardized_dataset"
 
 # Ensure the base output directory exists
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
