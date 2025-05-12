@@ -15,7 +15,7 @@ import argparse # Import argparse for command-line arguments
 
 # IMPORTANT: Update this path to the main directory containing the class subdirectories
 # It's now also configurable via command-line argument
-BASE_DATA_DIR = "../../dataset/roni/DatasetFlow" # Default value
+# BASE_DATA_DIR = "../../dataset/roni/DatasetFlow" # Default value
 
 # Reverse mapping for printing results
 LABEL_NAMES = {v: k for k, v in LABEL_MAPPING.items()}
@@ -131,8 +131,8 @@ def load_data(base_dir: str, max_files: int | None = None) -> pd.DataFrame | Non
     if max_files is not None and max_files > 0:
         print(f"Limiting data loading to a maximum of {max_files} files.")
         # Optionally shuffle before taking the first N files for more variety in test mode
-        # import random
-        # random.shuffle(csv_files)
+        import random
+        random.shuffle(csv_files)
         files_to_process = csv_files[:max_files] # Take the first 'max_files' files
 
     if not files_to_process:
