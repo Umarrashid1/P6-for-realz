@@ -9,7 +9,7 @@ import ast # For literal_eval when loading mappings
 # --- Configuration ---
 # **** Paths to the preprocessed data and mappings ****
 PREPROCESSED_PT_FILE = '../../dataset/packet_small.pt' # CHANGE THIS to your .pt file generated from PACKET data
-MAPPINGS_JSON_FILE = '../category_mappings.json' # CHANGE THIS if your mapping file has a different name/path
+MAPPINGS_JSON_FILE = 'category_mappings.json' # CHANGE THIS if your mapping file has a different name/path
 
 # --- Import column names from pipeline config ---
 # We need this to know which columns in the categorical tensor correspond to IP/MAC
