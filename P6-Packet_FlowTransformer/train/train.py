@@ -1,7 +1,6 @@
 import os
 from collections import Counter
 from typing import Dict, Optional
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -84,10 +83,6 @@ def train_model(
         total_loss = 0.0
         correct = seen = nan_batches = 0
 
-        # Use tqdm for a progress bar (optional but nice)
-        # from tqdm.auto import tqdm
-        # train_iterator = tqdm(train_loader, desc=f"Epoch {epoch:02d} Train", leave=False)
-        # for batch_idx, batch in enumerate(train_iterator): # Use iterator here
 
         for batch_idx, batch in enumerate(train_loader): # Original loop without tqdm
             packet_seq = batch["packet_seq"].to(device)
