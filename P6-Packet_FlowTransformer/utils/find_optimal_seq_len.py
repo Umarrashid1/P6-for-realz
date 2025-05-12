@@ -6,6 +6,7 @@ import concurrent.futures
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional
 import logging
+from . import io_utils
 
 
 # Configure logging if not already done
@@ -127,39 +128,9 @@ if __name__ == "__main__":
 
     # --- Mock io_utils for demonstration ---
     # Replace this with your actual io_utils import
-    class MockIoUtils:
-        def list_csv_files(self, directory):
-            # Create dummy CSV files for testing
-            Path("temp_data").mkdir(exist_ok=True)
-            files = []
-            for i in range(5):
-                file_path = Path("temp_data") / f"data_{i}.csv"
-                num_rows = np.random.randint(50, 200)
-                num_streams = np.random.randint(5, 20)
-                streams = np.random.randint(1, num_streams + 1, num_rows)
-                # Ensure streams are somewhat contiguous for realistic grouping
-                streams.sort()
-                df = pd.DataFrame({
-                    'stream': streams,
-                    'feature1': np.random.rand(num_rows),
-                    'feature2': np.random.rand(num_rows)
-                })
-                df.to_csv(file_path, index=False)
-                files.append(str(file_path))
-            print(f"Created dummy files: {files}")
-            return files
 
-        def load_csv_file(self, file_path, test_mode=False, rows_per_file=None):
-            print(f"Mock loading: {file_path}")
-            try:
-                nrows = 10 if test_mode else rows_per_file
-                df = pd.read_csv(file_path, nrows=nrows)
-                return df, file_path
-            except Exception as e:
-                print(f"Mock load error for {file_path}: {e}")
-                return None, file_path # Return None df on error
 
-    io_utils = MockIoUtils()
+
     # --- End Mock io_utils ---
 
     DATASET_DIRECTORY = "../../dataset/raw_dataset" # Directory with your CSVs
