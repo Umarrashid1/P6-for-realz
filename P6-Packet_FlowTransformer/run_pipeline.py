@@ -4,7 +4,7 @@ t0 = time.time()
 
 
 DATASET_DIR = '../../dataset/raw_dataset'
-OUTPUT_FILE = '../../dataset/packet_small_fixed.pt'
+OUTPUT_FILE = '../../dataset/packet_small.pt'
 
 preprocess_flows_as_sequences(
     dataset_dir=DATASET_DIR,
