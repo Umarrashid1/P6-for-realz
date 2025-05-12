@@ -10,7 +10,7 @@ import logging
 import datetime
 from .config import categorical_columns, numerical_columns, LABEL_MAPPING
 from utils import io_utils
-from utils import category_mapping
+from utils import category_mapping_utils
 
 # ── Set up timestamp and logging ──────────────────────────────────────────
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

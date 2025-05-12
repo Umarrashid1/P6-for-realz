@@ -4,7 +4,7 @@ from models.transformer import IoTTransformer
 from train.train import train_model, test_model
 from torch.utils.data import random_split
 import torch
-from utils.category_mapping import load_mappings
+from utils.category_mapping_utils import load_mappings
 from pipeline.config import categorical_columns, numerical_columns
 
 
