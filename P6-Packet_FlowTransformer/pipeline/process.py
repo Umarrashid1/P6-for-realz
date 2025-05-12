@@ -48,12 +48,13 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
         return file_path, [], [], [], {}
 
     required_flow_cols = ["stream"]
-    missing_cols = [c for c in numerical_columns + categorical_columns if c not in df.columns]
-    if missing_cols or any(c not in df.columns for c in required_flow_cols):
+    required_cols = numerical_columns + categorical_columns + required_flow_cols
+
+    missing_cols = [c for c in required_cols if c not in df.columns]
+    if missing_cols:
         logging.warning(f"[SKIP] Missing columns in {file_path}: {missing_cols}")
         return file_path, [], [], [], {}
 
-    
     df = df[
         numerical_columns + categorical_columns
     ].copy()
@@ -72,8 +73,8 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
         unknown_id = mapping["unknown"]
         df[col] = df[col].apply(lambda x: mapping.get(x, unknown_id)).astype(int)
 
-    group_keys = ["stream"]
-    flow_groups = df.groupby(group_keys, sort=False)
+
+    flow_groups = df.groupby("stream", sort=False)
 
     pkt_arrays: List[np.ndarray] = []
     label_list: List[int] = []
