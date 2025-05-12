@@ -55,9 +55,8 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
         logging.warning(f"[SKIP] Missing columns in {file_path}: {missing_cols}")
         return file_path, [], [], [], {}
 
-    df = df[
-        numerical_columns + categorical_columns
-    ].copy()
+    df = df[required_cols].copy()
+
 
     # Clip, fill, and standardize using global stats
     for col in numerical_columns:
