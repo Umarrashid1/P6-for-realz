@@ -20,7 +20,7 @@ from pipeline.config import categorical_columns
 __all__ = ["train_model", "test_model"]
 
 # ────────────────────────────────────────────────────────────────────────────────
-# Helper functions
+# Helper functions (assuming these are unchanged from your original code)
 # ────────────────────────────────────────────────────────────────────────────────
 
 def _build_loaders(train_ds, val_ds, batch_size: int, sampler_on: bool):
@@ -46,7 +46,7 @@ def _balanced_loss(train_ds, device) -> nn.CrossEntropyLoss:
     classes = np.arange(max(labels) + 1)
     weights = compute_class_weight("balanced", classes=classes, y=labels)
     weights_t = torch.tensor(weights, dtype=torch.float32, device=device)
-    print("Class‑balanced weights:", weights)
+    print(f"Using class‑balanced weights: {np.round(weights, 3)}") # Slightly cleaner print
     assert torch.isfinite(weights_t).all(), "⚠ Non‑finite class weight detected — check label distribution!"
     return nn.CrossEntropyLoss(weight=weights_t)
 
@@ -69,49 +69,58 @@ def train_model(
 ):
     """Train with out‑of‑range / NaN guards and detailed logging."""
     os.makedirs(save_dir, exist_ok=True)
+    print(f"Starting training for {epochs} epochs on device '{device}'...")
+    print(f"Saving checkpoints to '{save_dir}'")
 
     model.to(device)
     optimizer = optim.AdamW(model.parameters(), lr=lr)
     criterion = _balanced_loss(train_dataset, device)
     train_loader, val_loader = _build_loaders(train_dataset, val_dataset, batch_size, use_weighted_sampler)
 
+    best_val_f1 = -1.0 # Track best validation F1 for saving best model (optional but good practice)
+
     for epoch in range(1, epochs + 1):
         model.train()
         total_loss = 0.0
         correct = seen = nan_batches = 0
 
-        for batch_idx, batch in enumerate(train_loader):
+        # Use tqdm for a progress bar (optional but nice)
+        # from tqdm.auto import tqdm
+        # train_iterator = tqdm(train_loader, desc=f"Epoch {epoch:02d} Train", leave=False)
+        # for batch_idx, batch in enumerate(train_iterator): # Use iterator here
+
+        for batch_idx, batch in enumerate(train_loader): # Original loop without tqdm
             packet_seq = batch["packet_seq"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["label"].to(device)
             cat_feats = {c: batch[c].to(device) for c in categorical_columns}
 
             # ── Diagnostics & finite‑check before forward ─────────────────
-            if batch_idx == 0:  # only print once per epoch
+            if batch_idx == 0 and epoch == 1: # Only print extensive checks once
                 abs_max = float(packet_seq.abs().max())
-                print(f"Epoch {epoch:02d} Batch 0: packet_seq abs‑max = {abs_max:.3e}")
+                print(f"  Initial Batch 0: packet_seq abs‑max = {abs_max:.3e}")
                 if abs_max > 1e3:
-                    print("⚠️  Features extremely large — check standardisation stats")
+                    print("  ⚠️ Features extremely large — check standardisation stats")
 
-            # ---- Finite check ------------------------------------------------
             if not torch.isfinite(packet_seq).all():
                 n_nan = (~torch.isfinite(packet_seq)).sum().item()
-                print(f"❌ Batch {batch_idx}: packet_seq contains {n_nan} NaNs/Infs — skipping")
+                print(f"  ❌ Epoch {epoch:02d} Batch {batch_idx}: packet_seq contains {n_nan} NaNs/Infs — skipping")
                 continue
-            bad_cat = [c for c,t in cat_feats.items() if not torch.isfinite(t).all()]
+            bad_cat = [c for c, t in cat_feats.items() if not torch.isfinite(t).all()]
             if bad_cat:
-                print(f"❌ Batch {batch_idx}: categorical ids non‑finite in columns {bad_cat} — skipping")
+                print(f"  ❌ Epoch {epoch:02d} Batch {batch_idx}: categorical ids non‑finite in columns {bad_cat} — skipping")
                 continue
 
             optimizer.zero_grad()
             logits = model(packet_seq, cat_feats, attention_mask=attention_mask)
             loss = criterion(logits, labels)
 
-            # ── NaN guard ────────────────────────────────────────────────
             if not torch.isfinite(loss):
                 nan_batches += 1
-                print("❌ NaN/Inf loss — skipping batch.  Logits min/max:",
-                      float(logits.min()), float(logits.max()))
+                # Reduce frequency of NaN loss prints to avoid flooding console
+                if nan_batches <= 5 or nan_batches % 50 == 0:
+                    print(f"  ❌ Epoch {epoch:02d} NaN/Inf loss (Count: {nan_batches}) — skipping batch. Logits min/max:",
+                          float(logits.min()), float(logits.max()))
                 continue
 
             loss.backward()
@@ -141,43 +150,105 @@ def train_model(
                 val_labels.extend(labels.cpu().tolist())
 
         val_acc = accuracy_score(val_labels, val_preds)
-        _, _, macro_f1, _ = precision_recall_fscore_support(
+        precision, recall, macro_f1, support = precision_recall_fscore_support(
             val_labels, val_preds, average="macro", zero_division=0
         )
-
-        print(
-            f"Epoch {epoch:02d}/{epochs}  "
-            f"loss {train_loss:.4f}  "
-            f"acc {train_acc:.3f}/{val_acc:.3f}  "
-            f"macro‑F1 {macro_f1:.3f}  "
-            f"NaN‑batches {nan_batches}"
+        # Also calculate weighted F1, often useful for imbalanced datasets
+        _, _, weighted_f1, _ = precision_recall_fscore_support(
+             val_labels, val_preds, average="weighted", zero_division=0
         )
 
-        torch.save(model.state_dict(), os.path.join(save_dir, f"iot_transformer_ep{epoch}.pt"))
+
+        # --- Improved Epoch Summary Print ---
+        print(
+            f"Epoch {epoch:02d}/{epochs} | "
+            f"LR: {optimizer.param_groups[0]['lr']:.1e} | " # Show current LR
+            f"Loss: {train_loss:6.4f} | "
+            f"Acc (Trn/Val): {train_acc:5.3f}/{val_acc:5.3f} | "
+            f"F1 (Mac/Wgt): {macro_f1:5.3f}/{weighted_f1:5.3f} | "
+            f"NaNs: {nan_batches}"
+        )
+
+        # Save checkpoint for the current epoch
+        epoch_save_path = os.path.join(save_dir, f"model_ep{epoch}.pt")
+        torch.save(model.state_dict(), epoch_save_path)
+
+        # Save best model based on validation macro F1
+        if macro_f1 > best_val_f1:
+            best_val_f1 = macro_f1
+            best_save_path = os.path.join(save_dir, "model_best.pt")
+            torch.save(model.state_dict(), best_save_path)
+            print(f"  -> New best validation Macro-F1: {best_val_f1:.4f}. Saved to '{best_save_path}'")
+
+    print("\n" + "=" * 30 + " Training Finished " + "=" * 30)
+    print(f"Final model state saved for epoch {epochs}.")
+    print(f"Best model (Val Macro-F1: {best_val_f1:.4f}) saved to '{os.path.join(save_dir, 'model_best.pt')}'")
 
 
 # ────────────────────────────────────────────────────────────────────────────────
 
-def test_model(model: nn.Module, test_dataset, batch_size=64, device="cuda"):
+def test_model(model: nn.Module, test_dataset, batch_size=64, device="cuda", model_path: Optional[str] = None):
+    """Evaluate the model on the test set and print detailed results."""
+
+    # --- Load model if path is provided ---
+    if model_path:
+        print(f"\nLoading model state from: {model_path}")
+        try:
+            model.load_state_dict(torch.load(model_path, map_location=device))
+            print("Model loaded successfully.")
+        except Exception as e:
+            print(f"Error loading model state: {e}")
+            print("Proceeding with the model currently in memory.")
+
     loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     model.to(device).eval()
 
+    print(f"\nEvaluating on Test Set (Device: '{device}')...")
+
     preds_all, labels_all = [], []
     with torch.no_grad():
-        for batch in loader:
+        # Optional: Add tqdm progress bar here too
+        # from tqdm.auto import tqdm
+        # test_iterator = tqdm(loader, desc="Testing", leave=False)
+        # for batch in test_iterator:
+
+        for batch in loader: # Original loop
             packet_seq = batch["packet_seq"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["label"].to(device)
             cat_feats = {c: batch[c].to(device) for c in categorical_columns}
-            preds = model(packet_seq, cat_feats, attention_mask=attention_mask).argmax(1)
+            logits = model(packet_seq, cat_feats, attention_mask=attention_mask)
+            preds = logits.argmax(1)
             preds_all.extend(preds.cpu().tolist())
             labels_all.extend(labels.cpu().tolist())
 
-    acc = accuracy_score(labels_all, preds_all)
-    print("\nTest accuracy:", round(acc, 4))
-    print("Classification report:\n", classification_report(labels_all, preds_all, digits=4))
-    cm = confusion_matrix(labels_all, preds_all)
-    print("Confusion matrix:\n", cm)
+    # --- Clearer Test Results Section ---
+    print("\n" + "=" * 30 + " Test Set Results " + "=" * 30)
 
-    for cls, (correct, total) in enumerate(zip(np.diag(cm), cm.sum(1))):
-        print(f"Class {cls} acc: {correct/total if total else 0:.4f}")
+    # 1. Overall Accuracy
+    acc = accuracy_score(labels_all, preds_all)
+    print(f"\nOverall Test Accuracy: {acc:.4f}")
+
+    # 2. Classification Report (Most comprehensive)
+    print("\nClassification Report:")
+    # Ensure target names are provided if available, otherwise uses indices
+    target_names = getattr(test_dataset, 'classes', None) # Attempt to get class names if dataset has them
+    report = classification_report(
+        labels_all,
+        preds_all,
+        digits=4,
+        zero_division=0,
+        target_names=target_names
+    )
+    print(report)
+
+    # 3. Confusion Matrix
+    print("\nConfusion Matrix:")
+    cm = confusion_matrix(labels_all, preds_all)
+    print(cm)
+
+
+    # Removed the redundant per-class accuracy loop, as 'recall' in the
+    # classification report provides the same information (accuracy per class).
+
+    print("\n" + "=" * 78) # Footer for test results
