@@ -1,59 +1,33 @@
 import os
-import glob
 import numpy as np
 import pandas as pd
 import concurrent.futures
-from pathlib import Path
 from typing import List, Tuple, Dict, Optional
 import logging
+import time # Added for timing feedback
+
 # Assuming io_utils is in the same directory or package structure allows this import
+# If io_utils.load_csv_file can accept 'usecols', it's more memory efficient.
+# We will proceed assuming it loads the full CSV and we select the column,
+# but ideally, modify load_csv_file or use pd.read_csv directly here if possible.
 from . import io_utils # Or adjust based on your structure e.g., import io_utils
 
-# Configure logging if not already done
-# Ensure logging is configured *before* any logging calls if running as a script
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+# --- Worker function is no longer needed ---
 
-# --- Define the worker function at the top level ---
-def _get_lengths_from_file(args: Tuple[Optional[pd.DataFrame], str]) -> List[int]:
-    """
-    Helper function to extract flow lengths from a single DataFrame.
-    Designed to be run in a separate process.
-    """
-    df, file_path = args
-    flow_lengths = []
-    if df is not None and not df.empty:
-        if "stream" in df.columns:
-            # Group by 'stream' and calculate the size (length) of each group
-            try:
-                # Using observed=True can sometimes be faster and avoid warnings
-                # depending on pandas version and data types.
-                # Also explicitly handle potential non-numeric group keys if necessary.
-                lengths = df.groupby("stream", sort=False, observed=True).size()
-                flow_lengths.extend(lengths.tolist())
-            except Exception as e:
-                # Log the specific file path with the error
-                logging.error(f"Error processing flows in {file_path}: {e}")
-        else:
-            logging.warning(f"'stream' column not found in {file_path}. Cannot calculate flow lengths.")
-    elif df is None:
-        logging.warning(f"Received None DataFrame for path {file_path}. Skipping.")
-    # else: df is empty, already logged during loading usually or handled implicitly
-
-    return flow_lengths
-# --- End of top-level worker function ---
-
-
-def calculate_flow_length_stats(
+def calculate_global_flow_length_stats(
     dataset_dir: str,
+    stream_col_name: str = "stream", # Make stream column name configurable
     test_mode: bool = False,
     rows_per_file: Optional[int] = None,
     percentiles: List[int] = [50, 75, 90, 95, 99, 100]
 ) -> Dict[str, float]:
     """
-    Analyzes CSV files in a directory to find the distribution of flow lengths.
+    Analyzes CSV files in a directory to find the distribution of flow lengths,
+    grouping flows across ALL files.
 
     Args:
         dataset_dir: Path to the directory containing CSV files.
+        stream_col_name: The exact name of the column identifying flows/streams.
         test_mode: If True, load only a small subset of rows for quick testing.
         rows_per_file: Maximum rows to load per file (None for all rows).
                        Useful for large files if test_mode is False.
@@ -61,199 +35,270 @@ def calculate_flow_length_stats(
 
     Returns:
         A dictionary containing statistics (count, mean, std, min, max,
-        and specified percentiles) of the flow lengths across the dataset.
+        and specified percentiles) of the flow lengths across the entire dataset.
         Returns an empty dictionary if no valid flows are found.
     """
+    start_time = time.time()
     all_files = io_utils.list_csv_files(dataset_dir)
     if not all_files:
         logging.warning(f"No CSV files found in {dataset_dir}")
         return {}
 
-    logging.info(f"Analyzing flow lengths in {len(all_files)} files from {dataset_dir}...")
+    logging.info(f"Found {len(all_files)} files in {dataset_dir}. Starting data loading...")
 
-    all_flow_lengths: List[int] = []
+    loaded_data_frames: List[pd.DataFrame] = [] # Store loaded DataFrames (or just Series)
 
-    # Load files in parallel using ThreadPoolExecutor (good for I/O bound tasks)
-    loaded_files_args = []
+    # --- Parallel Loading Phase ---
     # Use slightly fewer workers than CPUs for loading if IO is the bottleneck,
     # or leave as os.cpu_count() if unsure.
-    num_load_workers = max(1, os.cpu_count() // 2) if os.cpu_count() else 4 # Example adjustment
+    # Consider adjusting based on HPC node specifics (cores vs threads)
+    num_load_workers = os.cpu_count() or 8 # Default to 8 if os.cpu_count() fails
     logging.info(f"Using {num_load_workers} workers for loading files.")
+
+    files_processed_count = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=num_load_workers) as tpool:
         # Submit loading tasks
+        # *** Optimization Note ***:
+        # If io_utils.load_csv_file supports a 'usecols' argument, use it:
+        # futures_load = {
+        #     tpool.submit(io_utils.load_csv_file, fp, test_mode, rows_per_file, usecols=[stream_col_name]): fp
+        #     for fp in all_files
+        # }
+        # If not, we load potentially more data than needed initially.
         futures_load = {
             tpool.submit(io_utils.load_csv_file, fp, test_mode, rows_per_file): fp
             for fp in all_files
         }
+
         # Collect results as they complete
+        total_files = len(all_files)
         for future in concurrent.futures.as_completed(futures_load):
             file_path = futures_load[future] # Get path for context
             try:
-                result = future.result() # result is (df, file_path) or None
-                if result is not None:
-                    loaded_files_args.append(result)
-                # else: load_csv_file should have logged the error if result is None
+                # result is (df, file_path) or None if io_utils returns tuple
+                # Adjust based on what io_utils.load_csv_file actually returns
+                load_result = future.result()
+
+                # Assuming result is the DataFrame or (DataFrame, path_string)
+                df = None
+                if isinstance(load_result, tuple) and len(load_result) > 0 and isinstance(load_result[0], pd.DataFrame):
+                    df = load_result[0]
+                elif isinstance(load_result, pd.DataFrame):
+                    df = load_result
+
+                if df is not None:
+                    if not df.empty:
+                        if stream_col_name in df.columns:
+                            # Keep only the essential column to save memory before combining
+                            loaded_data_frames.append(df[[stream_col_name]])
+                        else:
+                             logging.warning(f"'{stream_col_name}' column not found in {file_path}. Skipping file for analysis.")
+                    # else: df is empty, ignore
+                else:
+                    logging.warning(f"Failed to load or got empty result for {file_path}")
+
+                files_processed_count += 1
+                if files_processed_count % 20 == 0 or files_processed_count == total_files:
+                    logging.info(f"Loaded {files_processed_count}/{total_files} files...")
+
             except Exception as e:
-                logging.error(f"Error loading file {file_path}: {e}")
+                logging.error(f"Error loading or processing file {file_path}: {e}")
 
-
-    if not loaded_files_args:
-        logging.warning("No data successfully loaded from any files.")
+    if not loaded_data_frames:
+        logging.error("No data successfully loaded or stream column not found in any file.")
         return {}
 
-    logging.info(f"Loaded {len(loaded_files_args)} files. Calculating flow lengths...")
+    loading_done_time = time.time()
+    logging.info(f"Finished loading data ({len(loaded_data_frames)} files with '{stream_col_name}' column). Time elapsed: {loading_done_time - start_time:.2f} seconds.")
+    logging.info("Combining data from all files...")
 
-    # Process loaded dataframes in parallel using ProcessPoolExecutor for CPU-bound task
-    # Determine number of workers, avoid using too many if memory is constrained
-    num_process_workers = os.cpu_count() # Use all available CPUs
-    logging.info(f"Using {num_process_workers} workers for processing lengths.")
-    with concurrent.futures.ProcessPoolExecutor(max_workers=num_process_workers) as ppool:
-        # Submit processing tasks using the top-level function
-        futures_process = {
-            # Pass the tuple (df, file_path) directly to the top-level function
-            ppool.submit(_get_lengths_from_file, args): args[1] # Map future to file_path for logging
-            for args in loaded_files_args
+    # --- Combine Data Phase ---
+    try:
+        combined_df = pd.concat(loaded_data_frames, ignore_index=True)
+        # Free up memory by deleting the list of individual frames
+        del loaded_data_frames
+        logging.info(f"Data combined. Total packets (rows): {len(combined_df)}. Calculating global flow lengths...")
+    except Exception as e:
+        logging.error(f"Error concatenating DataFrames: {e}")
+        return {}
+
+    combine_done_time = time.time()
+    logging.info(f"Data combination took: {combine_done_time - loading_done_time:.2f} seconds.")
+
+    # --- Global GroupBy and Statistics Phase ---
+    if combined_df.empty:
+        logging.warning("Combined DataFrame is empty. No statistics to calculate.")
+        return {}
+
+    try:
+        logging.info(f"Performing global groupby on '{stream_col_name}'...")
+        # Group by the stream identifier across the *entire* dataset and count packets per stream
+        flow_lengths_series = combined_df.groupby(stream_col_name, sort=False).size()
+        del combined_df # Free memory again
+
+        groupby_done_time = time.time()
+        logging.info(f"Global groupby complete. Found {len(flow_lengths_series)} unique flows. Time elapsed: {groupby_done_time - combine_done_time:.2f} seconds.")
+
+        if flow_lengths_series.empty:
+             logging.warning("No flows found after grouping. No statistics calculated.")
+             return {}
+
+        # Calculate statistics using numpy for potentially better performance on large series
+        logging.info("Calculating final statistics...")
+        flow_lengths_np = flow_lengths_series.to_numpy(dtype=np.int64) # Convert to numpy array
+        del flow_lengths_series # Free memory
+
+        stats = {
+            "count": len(flow_lengths_np),
+            "mean": np.mean(flow_lengths_np),
+            "std_dev": np.std(flow_lengths_np),
+            "min": np.min(flow_lengths_np),
+            "max": np.max(flow_lengths_np),
         }
-        # Collect results
-        processed_count = 0
-        total_to_process = len(loaded_files_args)
-        for future in concurrent.futures.as_completed(futures_process):
-            file_path_processed = futures_process[future] # Get path for context
+
+        # Calculate requested percentiles
+        for p in percentiles:
             try:
-                lengths = future.result() # This is the List[int] from _get_lengths_from_file
-                all_flow_lengths.extend(lengths)
-                processed_count += 1
-                # Log progress periodically
-                if processed_count % 20 == 0 or processed_count == total_to_process:
-                     logging.info(f"Processed {processed_count}/{total_to_process} files for lengths...")
-            except Exception as e:
-                # This catches errors happening *during* the execution of _get_lengths_from_file
-                # within the worker process, or issues during result pickling/unpickling.
-                logging.error(f"Error processing result for file associated with {file_path_processed}: {e}")
+                stats[f"{p}th_percentile"] = np.percentile(flow_lengths_np, p)
+            except IndexError: # Should not happen if flow_lengths_np is not empty
+                logging.warning(f"Could not calculate {p}th percentile.")
+                stats[f"{p}th_percentile"] = np.nan
 
+        stats_done_time = time.time()
+        logging.info(f"Statistics calculation took: {stats_done_time - groupby_done_time:.2f} seconds.")
+        logging.info(f"Total analysis time: {stats_done_time - start_time:.2f} seconds.")
+        logging.info("Global flow length analysis complete.")
 
-    if not all_flow_lengths:
-        logging.warning("No valid flows found across all processed files.")
+        # Format stats for logging - Ensure all values are handled
+        formatted_stats = {
+            k: f'{v:.2f}' if isinstance(v, (float, np.number)) and not np.isnan(v) else
+               ('NaN' if isinstance(v, float) and np.isnan(v) else v)
+            for k, v in stats.items()
+        }
+        logging.info(f"Stats calculated: {formatted_stats}")
+
+        return stats
+
+    except Exception as e:
+        logging.error(f"An error occurred during global grouping or statistics calculation: {e}")
+        # If combined_df still exists, maybe log its memory usage?
+        # import sys
+        # logging.error(f"Combined DF memory usage: {sys.getsizeof(combined_df) / (1024**3):.2f} GB")
         return {}
 
-    # Calculate statistics using numpy
-    logging.info(f"Calculating final statistics for {len(all_flow_lengths)} flows...")
-    flow_lengths_np = np.array(all_flow_lengths, dtype=np.int64) # Specify dtype for safety
 
-    # Handle case where flow_lengths_np might still be empty after processing
-    if flow_lengths_np.size == 0:
-        logging.warning("Flow lengths array is empty after processing. No statistics calculated.")
-        return {}
-
-    stats = {
-        "count": len(flow_lengths_np),
-        "mean": np.mean(flow_lengths_np),
-        "std_dev": np.std(flow_lengths_np),
-        "min": np.min(flow_lengths_np),
-        "max": np.max(flow_lengths_np),
-    }
-
-    # Calculate requested percentiles
-    for p in percentiles:
-        try:
-            stats[f"{p}th_percentile"] = np.percentile(flow_lengths_np, p)
-        except IndexError:
-            logging.warning(f"Could not calculate {p}th percentile, possibly due to empty data.")
-            stats[f"{p}th_percentile"] = np.nan # Or handle as appropriate
-
-    logging.info("Flow length analysis complete.")
-    # Format stats for logging - Ensure all values are handled
-    formatted_stats = {
-        k: f'{v:.2f}' if isinstance(v, (float, np.number)) and not np.isnan(v) else
-           ('NaN' if isinstance(v, float) and np.isnan(v) else v)
-        for k, v in stats.items()
-    }
-    logging.info(f"Stats calculated: {formatted_stats}")
-
-    return stats
-
-# Example Usage:
+# --- Example Usage (Updated) ---
 if __name__ == "__main__":
     # Configure logging for the example script execution
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s", # Added logger name
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         handlers=[logging.StreamHandler()] # Log to console
     )
-    # Define logger for this specific module/script
-    logger = logging.getLogger(__name__) # Get logger for current module
+    logger = logging.getLogger(__name__)
 
     # --- IMPORTANT ---
     # Adjust this path relative to where you RUN the script from,
     # or use an absolute path.
-    # If utils/find_optimal_seq_len.py is run from the project root,
-    # the path might be "dataset/raw_dataset"
-    # If run from inside the 'utils' directory, it would be "../dataset/raw_dataset"
-    # The log shows '../../dataset/raw_dataset', suggesting it was run from utils/something/
     DATASET_DIRECTORY = "../../dataset/raw_dataset" # Adjust as needed!
+    STREAM_COLUMN = "stream" # ** Specify the correct column name here **
 
     # Check if directory exists
     if not os.path.isdir(DATASET_DIRECTORY):
        logger.error(f"Dataset directory not found: {os.path.abspath(DATASET_DIRECTORY)}")
        logger.error("Please ensure the DATASET_DIRECTORY path is correct relative to the script execution location.")
     else:
-        logger.info(f"Attempting to analyze dataset at: {os.path.abspath(DATASET_DIRECTORY)}")
-        # Assume io_utils is correctly imported relative to this file's location
-        # If io_utils is in the *same* directory ('utils'), use:
-        # import io_utils
-        # If io_utils is one level up (e.g., project root), you might need path adjustments or:
-        # import sys
-        # sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-        # import io_utils
+        logger.info(f"Attempting to analyze dataset globally at: {os.path.abspath(DATASET_DIRECTORY)}")
         try:
-            # Make sure the io_utils module is loaded correctly before calling this
-            # This assumes the relative import `. import io_utils` works based on your structure
-            # If running as a script `python -m utils.find_optimal_seq_len`, relative imports should work.
-            # If running `python utils/find_optimal_seq_len.py`, they might fail.
-            # You might need to change the import to `import io_utils` and ensure utils is runnable.
-
-            # Mock io_utils if it's not available for testing the structure
+            # *** Mock io_utils if needed for structural testing ***
             # class MockIoUtils:
-            #     def list_csv_files(self, path): return []
-            #     def load_csv_file(self, fp, test_mode, rows_per_file): return (None, fp)
-            # uncomment below and comment the real import if io_utils is the issue
-            # io_utils = MockIoUtils()
+            #     def list_csv_files(self, path):
+            #         # Create dummy files for testing structure
+            #         p = Path(path)
+            #         p.mkdir(exist_ok=True)
+            #         dummy_files = []
+            #         for i in range(5): # Create 5 dummy files
+            #             fn = p / f"test_{i}.csv"
+            #             # Create very small CSVs with the stream column
+            #             pd.DataFrame({
+            #                 STREAM_COLUMN: [f'flow_{i}', f'flow_{i}', f'flow_{(i+1)%3}'],
+            #                 'other_col': [1,2,3]
+            #             }).to_csv(fn, index=False)
+            #             dummy_files.append(str(fn))
+            #         return dummy_files
+            #
+            #     def load_csv_file(self, fp, test_mode, rows_per_file, **kwargs):
+            #         # Mock loading, respecting usecols if passed (though not explicitly here)
+            #         # print(f"Mock loading: {fp}") # Debug print
+            #         try:
+            #             # Read only necessary cols if specified, otherwise all
+            #             usecols = kwargs.get('usecols', None)
+            #             nrows = rows_per_file if test_mode or rows_per_file else None
+            #             df = pd.read_csv(fp, usecols=usecols, nrows=nrows)
+            #             return df # Return only df, not tuple, matching adjusted code
+            #         except Exception as e:
+            #             print(f"Mock load error for {fp}: {e}")
+            #             return None # Simulate loading failure
 
-            flow_stats = calculate_flow_length_stats(DATASET_DIRECTORY, test_mode=False)
+            # Comment out the real import and uncomment below to use mock
+            # import io_utils # Make sure the real one is not active
+            # io_utils = MockIoUtils()
+            # DATASET_DIRECTORY = "./temp_mock_data" # Use a temp dir for mock data
+
+            # *** Call the updated function ***
+            flow_stats = calculate_global_flow_length_stats(
+                DATASET_DIRECTORY,
+                stream_col_name=STREAM_COLUMN,
+                test_mode=False # Set to True for quick functional test
+                # rows_per_file=1000 # Uncomment to limit rows per file for testing
+            )
 
             if flow_stats:
-                print("\n--- Flow Length Statistics ---")
+                print("\n--- Global Flow Length Statistics ---")
                 for key, value in flow_stats.items():
-                    # Check for NaN before formatting
                     if isinstance(value, float) and np.isnan(value):
                         print(f"{key}: NaN")
                     else:
-                       # Attempt to format as float, fallback to string if not possible
                         try:
-                            # Format numbers (int/float) appropriately
                             if isinstance(value, (int, float, np.number)):
-                                print(f"{key}: {value:.2f}")
+                                print(f"{key}: {value:,.2f}") # Format with commas and 2 decimals
                             else:
-                                print(f"{key}: {value}") # Print non-numeric types as is
-                        except (TypeError, ValueError): # Catch potential formatting errors
-                            print(f"{key}: {value}") # Fallback
+                                print(f"{key}: {value}")
+                        except (TypeError, ValueError):
+                            print(f"{key}: {value}")
 
+                # Suggest an optimal length (e.g., 95th or 99th percentile)
+                p_suggest = 99 # Consider using 99th percentile for sequence length
+                p_key = f"{p_suggest}th_percentile"
+                p_val = flow_stats.get(p_key, np.nan)
 
-                # Suggest an optimal length (e.g., 95th percentile)
-                # Use .get with a default of np.nan to handle missing keys safely
-                p95 = flow_stats.get("95th_percentile", np.nan)
-                if not np.isnan(p95):
-                   suggested_len = int(p95)
+                if not np.isnan(p_val):
+                   suggested_len = int(p_val)
+                   print(f"\nSuggested max_seq_len (based on {p_key}): {suggested_len}")
                 else:
-                   suggested_len = 64 # Default if 95th percentile wasn't calculated
-                   logger.warning("95th percentile not found in stats, suggesting default max_seq_len=64.")
+                   # Fallback if percentile calculation failed or wasn't requested
+                   p95_val = flow_stats.get("95th_percentile", np.nan)
+                   if not np.isnan(p95_val):
+                       suggested_len = int(p95_val)
+                       logger.warning(f"{p_key} not found, using 95th percentile.")
+                       print(f"\nSuggested max_seq_len (based on 95th_percentile): {suggested_len}")
+                   else:
+                       suggested_len = 128 # Arbitrary default if common percentiles missing
+                       logger.warning(f"{p_key} and 95th percentile not found, suggesting default max_seq_len={suggested_len}.")
+                       print(f"\nSuggested max_seq_len (default): {suggested_len}")
 
-                print(f"\nSuggested max_seq_len (e.g., based on 95th percentile): {suggested_len}")
             else:
-                print("\nNo flow statistics were calculated.")
+                print("\nNo global flow statistics were calculated.")
+
+            # Clean up mock data if created
+            # if 'MockIoUtils' in locals() and os.path.exists(DATASET_DIRECTORY):
+            #     import shutil
+            #     shutil.rmtree(DATASET_DIRECTORY)
+            #     print(f"\nCleaned up mock data directory: {DATASET_DIRECTORY}")
+
 
         except ImportError as e:
-           logger.error(f"Import error: {e}. Check the import statement for 'io_utils' and your Python path/package structure.")
-           logger.error("If running as a script, ensure the module structure supports the relative import or adjust the import.")
+            logger.error(f"Import error: {e}. Check the import statement for 'io_utils' and your Python path/package structure.")
+            logger.error("If running as a script, ensure the module structure supports the relative import or adjust the import.")
         except Exception as e:
-           logger.exception(f"An unexpected error occurred during execution: {e}")
+            logger.exception(f"An unexpected error occurred during execution: {e}")
