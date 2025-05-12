@@ -8,46 +8,21 @@ import ast # For literal_eval when loading mappings
 
 # --- Configuration ---
 # **** Paths to the preprocessed data and mappings ****
-PREPROCESSED_PT_FILE = '../../dataset/packet_small.pt' # CHANGE THIS to your .pt file generated from PACKET data
-MAPPINGS_JSON_FILE = 'category_mappings.json' # CHANGE THIS if your mapping file has a different name/path
+# **** This PT file should be the one generated from PACKET data ****
+PREPROCESSED_PT_FILE = '../../dataset/packet_small.pt' # CHANGE THIS if needed
+MAPPINGS_JSON_FILE = 'category_mappings.json' # CHANGE THIS if needed
 
-# --- Import column names from pipeline config ---
-# We need this to know which columns in the categorical tensor correspond to IP/MAC
-try:
-    from pipeline.config import categorical_columns as packet_categorical_columns
-    print("✅ Successfully imported column definitions from pipeline.config")
+# --- Define the specific column names we need ---
+# These MUST match the keys used when saving the .pt file and in the mappings
+# (These should ideally come from config, but defining explicitly here for clarity)
+SRC_IP_COL_NAME = 'src_ip'
+DST_IP_COL_NAME = 'dst_ip'
+SRC_MAC_COL_NAME = 'src_mac'
+DST_MAC_COL_NAME = 'dst_mac'
 
-    EXPECTED_SRC_IP_COL = 'src_ip'
-    EXPECTED_DST_IP_COL = 'dst_ip'
-    EXPECTED_SRC_MAC_COL = 'src_mac'
-    EXPECTED_DST_MAC_COL = 'dst_mac'
-
-    # Find the indices of these columns in the config list
-    # This assumes the order in the .pt file's categorical tensor matches this list
-    try:
-        SRC_IP_IDX = packet_categorical_columns.index(EXPECTED_SRC_IP_COL)
-        DST_IP_IDX = packet_categorical_columns.index(EXPECTED_DST_IP_COL)
-        SRC_MAC_IDX = packet_categorical_columns.index(EXPECTED_SRC_MAC_COL)
-        DST_MAC_IDX = packet_categorical_columns.index(EXPECTED_DST_MAC_COL)
-        print(f"   Index mapping: src_ip={SRC_IP_IDX}, dst_ip={DST_IP_IDX}, src_mac={SRC_MAC_IDX}, dst_mac={DST_MAC_IDX}")
-        IP_COL_INDICES = [SRC_IP_IDX, DST_IP_IDX]
-        MAC_COL_INDICES = [SRC_MAC_IDX, DST_MAC_IDX]
-        IP_COL_NAMES = [EXPECTED_SRC_IP_COL, EXPECTED_DST_IP_COL]
-        MAC_COL_NAMES = [EXPECTED_SRC_MAC_COL, EXPECTED_DST_MAC_COL]
-
-    except ValueError as e:
-        print(f"❌ Error: Column '{e.args[0].split()[0]}' not found in imported config.categorical_columns.")
-        print("   Cannot determine column indices. Exiting.")
-        exit(1)
-
-except ImportError:
-    print("⚠️ Warning: Could not import from 'pipeline.config'.")
-    print("   Cannot determine column indices automatically. Exiting.")
-    exit(1)
-except AttributeError:
-     print("⚠️ Warning: 'categorical_columns' not found in imported 'pipeline.config'.")
-     print("   Cannot determine column indices automatically. Exiting.")
-     exit(1)
+IP_COL_NAMES = [SRC_IP_COL_NAME, DST_IP_COL_NAME]
+MAC_COL_NAMES = [SRC_MAC_COL_NAME, DST_MAC_COL_NAME]
+REQUIRED_KEYS = IP_COL_NAMES + MAC_COL_NAMES # Keys we need from the .pt file
 
 
 def load_mappings_from_json(path="category_mappings.json") -> Dict[str, Dict[Any, int]]:
@@ -57,7 +32,6 @@ def load_mappings_from_json(path="category_mappings.json") -> Dict[str, Dict[Any
         with open(path, "r") as f:
             raw = json.load(f)
         # Convert repr'd keys back to original types (int, float, str, etc.)
-        # Handle potential errors during literal_eval
         loaded_mappings = {}
         for col, mapping in raw.items():
             converted_mapping = {}
@@ -67,7 +41,7 @@ def load_mappings_from_json(path="category_mappings.json") -> Dict[str, Dict[Any
                     converted_mapping[original_key] = v_int
                 except (ValueError, SyntaxError, TypeError) as e:
                     print(f"  [Warning] Could not evaluate key '{k_repr}' for column '{col}'. Skipping. Error: {e}")
-                    continue # Skip problematic keys
+                    continue
             loaded_mappings[col] = converted_mapping
         print("Mappings loaded successfully.")
         return loaded_mappings
@@ -94,33 +68,28 @@ def create_reverse_mappings(mappings: Dict[str, Dict[Any, int]]) -> Dict[str, Di
     return reverse_mappings
 
 
-def check_ip_mac_stability_from_pt(
+def check_ip_mac_stability_from_pt_v2(
     pt_file_path: str,
     mappings_json_path: str,
-    ip_col_indices: List[int],
-    mac_col_indices: List[int],
-    ip_col_names: List[str], # Original names for mapping lookup
-    mac_col_names: List[str] # Original names for mapping lookup
+    ip_col_names: List[str], # e.g., ['src_ip', 'dst_ip']
+    mac_col_names: List[str] # e.g., ['src_mac', 'dst_mac']
     ) -> Tuple[str, pd.DataFrame]:
     """
-    Analyzes preprocessed data (.pt file) using category mappings (.json)
-    to determine IP-MAC stability.
+    Analyzes preprocessed data (.pt file with separate categorical keys)
+    using category mappings (.json) to determine IP-MAC stability.
 
     Args:
-        pt_file_path: Path to the .pt file containing 'categorical' tensor.
+        pt_file_path: Path to the .pt file containing tensors keyed by column name.
         mappings_json_path: Path to the category_mappings.json file.
-        ip_col_indices: List of column indices for IP addresses in the tensor.
-        mac_col_indices: List of column indices for MAC addresses in the tensor.
-        ip_col_names: List of original IP column names corresponding to indices.
-        mac_col_names: List of original MAC column names corresponding to indices.
-
+        ip_col_names: List of original IP column names (keys in .pt file).
+        mac_col_names: List of original MAC column names (keys in .pt file).
 
     Returns:
         A tuple containing:
           - Recommended strategy ('A' for static, 'B' for dynamic).
           - A DataFrame of unique IP (string) - MAC (string) pairs found.
     """
-    print(f"\n--- Starting IP-MAC Stability Check (using .pt file) ---")
+    print(f"\n--- Starting IP-MAC Stability Check (using .pt file with separate keys) ---")
     print(f"PT File: {pt_file_path}")
     print(f"Mappings File: {mappings_json_path}")
 
@@ -130,17 +99,25 @@ def check_ip_mac_stability_from_pt(
         reverse_mappings = create_reverse_mappings(mappings)
     except Exception as e:
         print(f"❌ Failed to load or process mappings. Cannot proceed.")
-        raise # Re-raise the exception
+        raise
 
     # 2. Load Preprocessed Data
     print(f"\n1. Loading preprocessed data from {pt_file_path}...")
     try:
         data = torch.load(pt_file_path, map_location='cpu') # Load to CPU
-        if 'categorical' not in data:
-            raise ValueError("Key 'categorical' not found in the .pt file.")
-        categorical_tensor = data['categorical']
-        num_samples, num_features = categorical_tensor.shape
-        print(f"   Loaded 'categorical' tensor with shape: {categorical_tensor.shape}")
+        if not isinstance(data, dict):
+             raise TypeError(f".pt file did not contain a dictionary. Found type: {type(data)}")
+
+        # Verify all required keys (column names) exist in the loaded data
+        required_keys_in_pt = ip_col_names + mac_col_names
+        missing_keys = [key for key in required_keys_in_pt if key not in data]
+        if missing_keys:
+            raise ValueError(f"Required keys {missing_keys} not found in the .pt file. Available keys: {list(data.keys())}")
+
+        print(f"   Loaded .pt file successfully. Found required keys: {required_keys_in_pt}")
+        # Example: Print shape of one tensor
+        print(f"   Shape of '{ip_col_names[0]}' tensor: {data[ip_col_names[0]].shape}")
+
     except FileNotFoundError:
         print(f"❌ Error: Preprocessed data file not found at {pt_file_path}")
         raise
@@ -151,18 +128,20 @@ def check_ip_mac_stability_from_pt(
     # 3. Reconstruct IP/MAC Strings
     print("\n2. Reconstructing IP and MAC strings from codes...")
     all_pairs_list = []
-    required_indices = list(set(ip_col_indices + mac_col_indices))
 
-    # Check if indices are valid
-    if any(idx >= num_features for idx in required_indices):
-         raise ValueError(f"One or more required column indices ({required_indices}) are out of bounds for the tensor shape {categorical_tensor.shape}")
+    # Iterate through the pairs of IP/MAC columns (e.g., src_ip/src_mac, dst_ip/dst_mac)
+    for ip_name, mac_name in zip(ip_col_names, mac_col_names):
+        print(f"   Processing pair: {ip_name} - {mac_name}")
 
-    # Extract relevant columns from tensor
-    codes_df = pd.DataFrame(categorical_tensor[:, required_indices].numpy(),
-                            columns=[packet_categorical_columns[i] for i in required_indices])
+        # Get the tensors from the loaded data using the names as keys
+        ip_codes_tensor = data[ip_name]
+        mac_codes_tensor = data[mac_name]
 
-    for ip_idx, mac_idx, ip_name, mac_name in zip(ip_col_indices, mac_col_indices, ip_col_names, mac_col_names):
-        print(f"   Processing pair: {ip_name} (idx {ip_idx}) - {mac_name} (idx {mac_idx})")
+        # Ensure tensors are 1D or 2D (for sequences) - assuming 2D [num_seq, seq_len]
+        # Flatten them for mapping if they are sequences
+        ip_codes_flat = ip_codes_tensor.flatten().numpy()
+        mac_codes_flat = mac_codes_tensor.flatten().numpy()
+
         # Get the reverse maps for the specific IP and MAC columns
         try:
             reverse_map_ip = reverse_mappings[ip_name]
@@ -171,13 +150,10 @@ def check_ip_mac_stability_from_pt(
              print(f"❌ Error: Column name '{e.args[0]}' not found in loaded mappings. Check config and mapping file consistency.")
              raise
 
-        # Get the integer codes from the DataFrame using original names
-        ip_codes = codes_df[ip_name]
-        mac_codes = codes_df[mac_name]
-
         # Map codes back to strings - use .get() for safety against missing codes
-        ip_strings = ip_codes.map(lambda code: reverse_map_ip.get(code, np.nan))
-        mac_strings = mac_codes.map(lambda code: reverse_map_mac.get(code, np.nan))
+        # Using list comprehension for potential speed improvement over pd.Series.map
+        ip_strings = [reverse_map_ip.get(code, np.nan) for code in ip_codes_flat]
+        mac_strings = [reverse_map_mac.get(code, np.nan) for code in mac_codes_flat]
 
         pairs = pd.DataFrame({'IP': ip_strings, 'MAC': mac_strings})
         all_pairs_list.append(pairs)
@@ -189,15 +165,14 @@ def check_ip_mac_stability_from_pt(
     all_pairs = pd.concat(all_pairs_list, ignore_index=True)
     print(f"   Combined pairs count (raw reconstructed): {len(all_pairs)}")
 
-    # Clean reconstructed strings (handle NaNs introduced by missing codes)
+    # (Cleaning, Deduplication, Analysis, Reporting - Identical to previous script)
+    # --- Data Cleaning ---
     initial_rows = len(all_pairs)
     all_pairs.dropna(subset=['IP', 'MAC'], inplace=True)
-    # Convert to string type *after* dropna to avoid issues with NaN comparison
     all_pairs['IP'] = all_pairs['IP'].astype(str)
     all_pairs['MAC'] = all_pairs['MAC'].astype(str)
     rows_after_nan_drop = len(all_pairs)
     print(f"   Pairs count after dropping NaNs: {rows_after_nan_drop} (Removed {initial_rows - rows_after_nan_drop})")
-
 
     # Drop duplicate IP-MAC pairs
     unique_ip_mac_pairs = all_pairs.drop_duplicates().reset_index(drop=True)
@@ -208,13 +183,9 @@ def check_ip_mac_stability_from_pt(
          raise RuntimeError("No valid unique IP-MAC pairs found after reconstruction and cleaning.")
 
     print("\n4. Analyzing stability...")
-    # Group by IP address and count the number of unique MAC addresses
     ip_stability_counts = unique_ip_mac_pairs.groupby('IP')['MAC'].nunique()
-
-    # Identify IPs associated with more than one MAC address
     multi_mac_ips = ip_stability_counts[ip_stability_counts > 1]
 
-    # (Rest of the reporting and conclusion logic is identical to the previous script)
     # 5. Reporting Findings
     total_unique_ips = len(ip_stability_counts)
     num_multi_mac_ips = len(multi_mac_ips)
@@ -267,7 +238,7 @@ def check_ip_mac_stability_from_pt(
 # --- Main Execution Block ---
 if __name__ == "__main__":
 
-    # **** Use the configured paths ****
+    # Use the configured paths
     pt_file = PREPROCESSED_PT_FILE
     mappings_file = MAPPINGS_JSON_FILE
 
@@ -285,11 +256,10 @@ if __name__ == "__main__":
     print(f"  Mappings File: {mappings_file}")
 
     try:
-        recommended_strategy, unique_pairs = check_ip_mac_stability_from_pt(
+        # Use the specific column names defined at the top
+        recommended_strategy, unique_pairs = check_ip_mac_stability_from_pt_v2(
             pt_file_path=pt_file,
             mappings_json_path=mappings_file,
-            ip_col_indices=IP_COL_INDICES,
-            mac_col_indices=MAC_COL_INDICES,
             ip_col_names=IP_COL_NAMES,
             mac_col_names=MAC_COL_NAMES
         )
@@ -305,13 +275,12 @@ if __name__ == "__main__":
         print(f"\n✅ Final Recommended Strategy: {recommended_strategy}")
 
     except FileNotFoundError:
-         # Should be caught by initial check, but good practice
          print(f"❌ Error: A required file was not found during processing.")
          exit(1)
-    except (RuntimeError, ValueError) as e: # Catch specific errors raised in function
+    except (RuntimeError, ValueError, TypeError, KeyError) as e: # Catch more specific errors
          print(f"❌ Error: {e}")
          exit(1)
     except Exception as e:
          print(f"❌ An unexpected error occurred: {type(e).__name__} - {e}")
-         exit(1) # Exit with error code
+         exit(1)
 
