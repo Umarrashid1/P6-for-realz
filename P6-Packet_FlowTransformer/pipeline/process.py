@@ -47,19 +47,15 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
         logging.warning(f"[SKIP] No label for: {file_path}")
         return file_path, [], [], [], {}
 
-    required_flow_cols = ["src_ip", "dst_ip", "src_port", "dst_port"]
+    required_flow_cols = ["stream"]
     missing_cols = [c for c in numerical_columns + categorical_columns if c not in df.columns]
     if missing_cols or any(c not in df.columns for c in required_flow_cols):
         logging.warning(f"[SKIP] Missing columns in {file_path}: {missing_cols}")
         return file_path, [], [], [], {}
 
-    df["protocol"] = np.select(
-        [df["l4_tcp"].eq(1), df["l4_udp"].eq(1)], ["TCP", "UDP"], default="OTHER"
-    )
-
+    
     df = df[
-        numerical_columns + categorical_columns +
-        ["src_ip", "dst_ip", "src_port", "dst_port", "protocol"]
+        numerical_columns + categorical_columns
     ].copy()
 
     # Clip, fill, and standardize using global stats
@@ -76,7 +72,7 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
         unknown_id = mapping["unknown"]
         df[col] = df[col].apply(lambda x: mapping.get(x, unknown_id)).astype(int)
 
-    group_keys = ["src_ip", "dst_ip", "src_port", "dst_port", "protocol"]
+    group_keys = ["stream"]
     flow_groups = df.groupby(group_keys, sort=False)
 
     pkt_arrays: List[np.ndarray] = []
