@@ -246,9 +246,8 @@ def check_ip_mac_stability_standalone(
 # --- Main Execution Block ---
 if __name__ == "__main__":
 
-    # **** HARDCODED PATH ****
-    PACKET_DATASET_DIR = '../../../dataset/raw_dataset'
-    # **** HARDCODED PATH ****
+    PACKET_DATASET_DIR = '../../dataset/raw_dataset'
+
 
     # Set test_mode to True for a faster check on a subset of rows per file
     # Set test_mode to False to analyze all rows (can be slow)
