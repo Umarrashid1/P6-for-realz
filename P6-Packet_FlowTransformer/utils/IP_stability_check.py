@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 from typing import List, Tuple
-import argparse # Use argparse for command-line arguments
+# No argparse needed anymore
 
 # --- Import column names from pipeline config ---
 try:
@@ -245,33 +245,26 @@ def check_ip_mac_stability_standalone(
 
 # --- Main Execution Block ---
 if __name__ == "__main__":
-    # Setup command-line argument parsing
-    parser = argparse.ArgumentParser(description="Check IP-MAC address stability in packet data CSVs.")
-    parser.add_argument("packet_dir", help="Directory containing the packet data CSV files.")
-    parser.add_argument("--test", action="store_true", help="Run in test mode (limits rows per file).")
-    parser.add_argument("--rows", type=int, default=5000, help="Number of rows per file to process in test mode.")
-    # Optional: Add arguments to override default IP/MAC columns if needed
-    # parser.add_argument("--ip-cols", nargs='+', default=PACKET_IP_COLS)
-    # parser.add_argument("--mac-cols", nargs='+', default=PACKET_MAC_COLS)
 
-    args = parser.parse_args()
+    # **** HARDCODED PATH ****
+    PACKET_DATASET_DIR = '../../../dataset/raw_dataset'
+    # **** HARDCODED PATH ****
 
-    # Use arguments passed from command line
-    packet_dataset_dir = args.packet_dir
-    test_mode_flag = args.test
-    rows_per_file_limit = args.rows
-    # ip_cols_to_use = args.ip_cols
-    # mac_cols_to_use = args.mac_cols
-    ip_cols_to_use = PACKET_IP_COLS # Using defaults from config/fallback
-    mac_cols_to_use = PACKET_MAC_COLS # Using defaults from config/fallback
+    # Set test_mode to True for a faster check on a subset of rows per file
+    # Set test_mode to False to analyze all rows (can be slow)
+    TEST_MODE_FLAG = True  # Default to True for safety/speed
+    ROWS_PER_FILE_LIMIT = 5000 # Used only if TEST_MODE_FLAG is True
 
+    # Use column names derived from config import or fallback
+    ip_cols_to_use = PACKET_IP_COLS
+    mac_cols_to_use = PACKET_MAC_COLS
 
     # --- Input Validation ---
-    if not os.path.isdir(packet_dataset_dir):
-         print(f"❌ Error: Packet dataset directory not found: {packet_dataset_dir}")
+    if not os.path.isdir(PACKET_DATASET_DIR):
+         print(f"❌ Error: Packet dataset directory not found: {PACKET_DATASET_DIR}")
          exit(1) # Exit with error code
     if len(ip_cols_to_use) != len(mac_cols_to_use):
-         print(f"❌ Error: Mismatch between number of IP columns ({len(ip_cols_to_use)}) and MAC columns ({len(mac_cols_to_use)}).")
+         print(f"❌ Error: Mismatch between number of IP columns ({len(ip_cols_to_use)}) and MAC columns ({len(mac_cols_to_use)}). Check config or fallback definitions.")
          exit(1)
     if not ip_cols_to_use or not mac_cols_to_use:
           print(f"❌ Error: IP or MAC column lists are empty. Check config import or definitions.")
@@ -279,13 +272,14 @@ if __name__ == "__main__":
 
 
     # --- Run the Check ---
+    print(f"Starting stability check for hardcoded path: {PACKET_DATASET_DIR}")
     try:
         recommended_strategy, unique_pairs = check_ip_mac_stability_standalone(
-            packet_dataset_dir=packet_dataset_dir,
+            packet_dataset_dir=PACKET_DATASET_DIR,
             ip_cols=ip_cols_to_use,
             mac_cols=mac_cols_to_use,
-            test_mode=test_mode_flag,
-            rows_per_file=rows_per_file_limit
+            test_mode=TEST_MODE_FLAG,
+            rows_per_file=ROWS_PER_FILE_LIMIT
         )
 
         # Optional: Save the unique pairs DataFrame for later use in feature engineering
