@@ -13,7 +13,7 @@ import datetime
 # --- Configuration ---
 # Attempt to import flow-specific columns first, then fall back or error
 try:
-    from .config import categorical_columns_flows, numerical_columns_flows, LABEL_MAPPING
+    from config import categorical_columns_flows, numerical_columns_flows, LABEL_MAPPING
 
     print("✅ Using flow-specific columns from .config")
 except ImportError:
