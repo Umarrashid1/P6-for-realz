@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
-from .config import numerical_columns  # List of your numeric feature columns
+from .config import numerical_columns_flows  # List of your numeric feature columns
 
 def compute_and_save_global_stats(dataset_dir, output_file):
     all_data = []
@@ -23,11 +23,11 @@ def compute_and_save_global_stats(dataset_dir, output_file):
                 continue
 
             # Add missing numeric columns as NaNs
-            missing = [col for col in numerical_columns if col not in df.columns]
+            missing = [col for col in numerical_columns_flows if col not in df.columns]
             for col in missing:
                 df[col] = np.nan
 
-            df = df[numerical_columns]  # Ensure column order
+            df = df[numerical_columns_flows]  # Ensure column order
             all_data.append(df)
 
     if not all_data:
@@ -66,7 +66,7 @@ def compute_and_save_global_stats(dataset_dir, output_file):
     )
 
     print(f"[INFO] Saved global stats to {output_file}")
-    print(f"[INFO] Columns: {numerical_columns}")
+    print(f"[INFO] Columns: {numerical_columns_flows}")
     print(f"[INFO] Mean: {global_means}")
     print(f"[INFO] Std: {global_stds}")
     print(f"[INFO] Clip low: {clip_low.values}")
