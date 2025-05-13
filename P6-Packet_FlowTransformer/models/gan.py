@@ -6,107 +6,168 @@ from tensorflow.keras.layers import Dense, LeakyReLU, BatchNormalization, Input
 from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.optimizers import Adam
 import logging
-from sklearn.preprocessing import MinMaxScaler # Added for data scaling
+from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from pipeline.config import numerical_columns, categorical_columns
+
+
+
+# Ensure there are no overlaps between CATEGORICAL_COLUMNS and NUMERICAL_COLUMNS
+# and that they cover all features you intend to use from your CSV.
 
 # --- 1. Configure Logging ---
-# Set up logging to a file
 logging.basicConfig(filename='gan_script.log',
                     level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s',
-                    filemode='w') # 'w' to overwrite the log file each time
-
-logging.info("Script started.")
+                    filemode='w')
+logging.info("Script started. Preprocessing will be applied and then reversed for final output.")
 
 # --- 2. Define GAN Parameters ---
-# These are minimal parameters for demonstration
-latent_dim = 100      # Size of the random noise vector (input to generator)
-data_dim = 5          # Number of features in the synthetic data -  *** IMPORTANT: UPDATE THIS TO MATCH YOUR DATASET ***
+latent_dim = 100
+# data_dim will be determined after preprocessing (due to one-hot encoding)
 num_samples_to_generate = 1000
-epochs = 5000         # Minimal number of epochs for demonstration
+epochs = 5000  # Adjust as needed
 batch_size = 64
-g_lr = 0.0002         # Generator learning rate
-d_lr = 0.0002         # Discriminator learning rate
-beta_1 = 0.5          # Adam optimizer beta1
+g_lr = 0.0002
+d_lr = 0.0002
+beta_1 = 0.5
+
 
 # --- 3. Prepare Real Data ---
-# This is where you load and preprocess YOUR dataset.
-def load_and_preprocess_real_data(file_path, num_features):
+def load_and_preprocess_real_data(file_path, numerical_cols, categorical_cols):
     """
-    Loads data from a CSV file, selects relevant features, and scales it.
+    Loads data, separates numerical and categorical features,
+    scales numerical, and one-hot encodes categorical.
+    Returns the processed data, the preprocessor object, and the new data dimension.
     """
     try:
         logging.info(f"Attempting to load data from: {file_path}")
         df = pd.read_csv(file_path)
-        logging.info(f"Successfully loaded data. Shape: {df.shape}")
+        logging.info(f"Successfully loaded data. Original shape: {df.shape}")
 
-        # *** IMPORTANT: Adapt this part to your dataset ***
-        # For example, if your CSV has many columns, select the ones you want to model.
-        # Ensure you have `num_features` columns selected.
-        if df.shape[1] < num_features:
-            logging.error(f"Dataset has fewer columns ({df.shape[1]}) than expected `data_dim` ({num_features}). Please check your `data_dim` or dataset.")
-            raise ValueError("Not enough columns in the dataset for the specified `data_dim`.")
+        # Select only the columns we're interested in
+        all_relevant_columns = numerical_cols + categorical_cols
+        # Ensure all listed columns exist in the DataFrame
+        missing_cols = [col for col in all_relevant_columns if col not in df.columns]
+        if missing_cols:
+            logging.error(f"The following specified columns are missing from the CSV: {missing_cols}")
+            raise KeyError(f"Missing columns in CSV: {missing_cols}")
 
-        # Assuming the first `num_features` columns are the ones you want.
-        # If not, select them explicitly, e.g., df[['col1', 'col2', ...]]
-        real_data_df = df.iloc[:, :num_features]
-        logging.info(f"Selected {num_features} features. Shape after selection: {real_data_df.shape}")
+        df_relevant = df[all_relevant_columns].copy()  # Use .copy() to avoid SettingWithCopyWarning
+        logging.info(f"Selected relevant columns. Shape: {df_relevant.shape}")
 
-        # Convert to numpy array
-        real_data_np = real_data_df.values.astype('float32')
+        # Handle missing values (important for real-world data)
+        # Numerical: fill with median
+        for col in numerical_cols:
+            if df_relevant[col].isnull().any():
+                median_val = df_relevant[col].median()
+                df_relevant[col].fillna(median_val, inplace=True)
+                logging.info(f"Filled NaNs in numerical column '{col}' with median {median_val}.")
+        # Categorical: fill with a placeholder string 'MISSING'
+        for col in categorical_cols:
+            # Convert to string first to ensure fillna works as expected and to handle mixed types
+            df_relevant[col] = df_relevant[col].astype(str)
+            if df_relevant[col].isnull().any() or (
+                    df_relevant[col] == 'nan').any():  # Pandas might read 'nan' as string
+                df_relevant[col].fillna('MISSING', inplace=True)
+                df_relevant[col].replace('nan', 'MISSING', inplace=True)  # Explicitly replace string 'nan'
+                logging.info(f"Filled NaNs/string 'nan' in categorical column '{col}' with placeholder 'MISSING'.")
 
-        # Scale data to the range [-1, 1] as the generator uses 'tanh' activation
-        scaler = MinMaxScaler(feature_range=(-1, 1))
-        real_data_scaled = scaler.fit_transform(real_data_np)
-        logging.info(f"Data scaled to [-1, 1]. Shape: {real_data_scaled.shape}")
+        # Define transformers
+        # Numerical features: Scale to [-1, 1] for tanh activation in generator
+        numerical_transformer = Pipeline(steps=[
+            ('scaler', MinMaxScaler(feature_range=(-1, 1)))
+        ])
 
-        return real_data_scaled, scaler # Return scaler to potentially de-scale generated data
+        # Categorical features: One-hot encode
+        categorical_transformer = Pipeline(steps=[
+            ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
+            # sparse_output=False for dense array
+        ])
+
+        # Create a preprocessor object using ColumnTransformer
+        # This object will be fitted on the training data and used to transform it.
+        # It will also be used to inverse_transform the generated data.
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ('num', numerical_transformer, numerical_cols),
+                ('cat', categorical_transformer, categorical_cols)
+            ],
+            remainder='drop'  # Drop any columns not specified in numerical_cols or categorical_cols
+        )
+
+        # Fit the preprocessor on the relevant data and transform it
+        logging.info("Fitting preprocessor and transforming data...")
+        real_data_processed_np = preprocessor.fit_transform(df_relevant)
+        logging.info(f"Data processed. Shape after preprocessing: {real_data_processed_np.shape}")
+
+        # The number of features for the GAN is now the width of this processed array
+        processed_data_dim = real_data_processed_np.shape[1]
+        logging.info(f"Effective data dimension for GAN (after one-hot encoding, etc.): {processed_data_dim}")
+
+        return real_data_processed_np.astype('float32'), preprocessor, processed_data_dim
 
     except FileNotFoundError:
         logging.error(f"Error: The file {file_path} was not found.")
+        raise
+    except KeyError as e:
+        logging.error(
+            f"KeyError: {e}. This likely means a column specified in NUMERICAL_COLUMNS or CATEGORICAL_COLUMNS was not found in the CSV file.")
         raise
     except Exception as e:
         logging.error(f"Error loading or preprocessing data: {e}")
         raise
 
-dataset_path = '../../dataset/raw_dataset'
 
-# Load your actual data
+file_path = "../../../dataset/raw_dataset"
+
 try:
-    # The `data_dim` parameter (defined earlier) should match the number of features
-    # you intend to use from your dataset.
-    real_training_data, data_scaler = load_and_preprocess_real_data(dataset_path, data_dim)
-    logging.info(f"Using real training data with shape: {real_training_data.shape}")
+    real_training_data, data_preprocessor, data_dim = load_and_preprocess_real_data(
+        file_path, numerical_columns, categorical_columns
+    )
+    logging.info(f"Using real training data with shape: {real_training_data.shape}, data_dim for GAN: {data_dim}")
+    if data_dim == 0:
+        logging.error("Data dimension for GAN is 0. Check column lists and data. Exiting.")
+        exit()
 except Exception as e:
-    logging.error(f"Failed to load real data. Exiting. Error: {e}")
-    exit() # Exit if data loading fails
+    logging.error(f"Failed to load or preprocess real data. Exiting. Error: {e}")
+    exit()
 
 
 # --- 4. Build the Generator ---
 def build_generator(latent_dim, output_dim):
     model = Sequential(name="Generator")
-    model.add(Dense(128, input_dim=latent_dim))
+    # Adjust layer sizes if data_dim becomes very large due to one-hot encoding
+    model.add(Dense(128 if output_dim < 256 else 256, input_dim=latent_dim))
     model.add(LeakyReLU(alpha=0.2))
     model.add(BatchNormalization(momentum=0.8))
-    model.add(Dense(256))
+    model.add(Dense(256 if output_dim < 512 else 512))
     model.add(LeakyReLU(alpha=0.2))
     model.add(BatchNormalization(momentum=0.8))
-    model.add(Dense(512))
+    model.add(Dense(512 if output_dim < 1024 else 1024))
     model.add(LeakyReLU(alpha=0.2))
     model.add(BatchNormalization(momentum=0.8))
-    model.add(Dense(output_dim, activation='tanh')) # tanh to keep outputs in [-1, 1] range
-    logging.info("Generator model built.")
+    # Output layer uses tanh because numerical data is scaled to [-1, 1]
+    # and one-hot encoded data is also effectively in a similar range (0s and 1s)
+    # which tanh can represent.
+    model.add(Dense(output_dim, activation='tanh'))
+    logging.info("Generator model built with tanh output activation.")
     return model
+
 
 # --- 5. Build the Discriminator ---
 def build_discriminator(input_dim):
     model = Sequential(name="Discriminator")
-    model.add(Dense(512, input_dim=input_dim))
+    # Adjust layer sizes based on input_dim
+    model.add(Dense(512 if input_dim < 1024 else 1024, input_dim=input_dim))
     model.add(LeakyReLU(alpha=0.2))
-    model.add(Dense(256))
+    model.add(Dense(256 if input_dim < 512 else 512))
     model.add(LeakyReLU(alpha=0.2))
-    model.add(Dense(1, activation='sigmoid')) # Sigmoid for binary classification (real/fake)
+    model.add(Dense(1, activation='sigmoid'))  # For binary classification (real/fake)
     logging.info("Discriminator model built.")
     return model
+
 
 # --- 6. Build the GAN (Combined Model) ---
 generator = build_generator(latent_dim, data_dim)
@@ -116,6 +177,7 @@ discriminator.compile(loss='binary_crossentropy',
                       optimizer=Adam(learning_rate=d_lr, beta_1=beta_1),
                       metrics=['accuracy'])
 
+# For the combined GAN model, we only train the generator
 discriminator.trainable = False
 
 gan_input = Input(shape=(latent_dim,))
@@ -128,15 +190,17 @@ logging.info("GAN model built and compiled.")
 
 # --- 7. Training the GAN ---
 logging.info(f"Starting GAN training for {epochs} epochs.")
-
 for epoch in range(epochs):
     # --- Train Discriminator ---
+    # Select a random batch of real (processed) samples
     idx = np.random.randint(0, real_training_data.shape[0], batch_size)
     real_samples = real_training_data[idx]
 
+    # Generate a batch of new synthetic (processed) samples
     noise = np.random.normal(0, 1, (batch_size, latent_dim))
     fake_samples = generator.predict(noise, verbose=0)
 
+    # Labels for real and fake samples (with label smoothing for real labels)
     real_labels = np.ones((batch_size, 1)) * 0.9
     fake_labels = np.zeros((batch_size, 1))
 
@@ -146,44 +210,68 @@ for epoch in range(epochs):
 
     # --- Train Generator ---
     noise = np.random.normal(0, 1, (batch_size, latent_dim))
+    # We want the discriminator to classify these as real (label 1)
     valid_labels_for_generator = np.ones((batch_size, 1))
     g_loss = gan.train_on_batch(noise, valid_labels_for_generator)
 
     if (epoch + 1) % 100 == 0:
-        logging.info(f"Epoch {epoch + 1}/{epochs} | D Loss: {d_loss[0]:.4f} | D Acc: {d_loss[1]*100:.2f}% | G Loss: {g_loss:.4f}")
-
+        logging.info(
+            f"Epoch {epoch + 1}/{epochs} | D Loss: {d_loss[0]:.4f} | D Acc: {d_loss[1] * 100:.2f}% | G Loss: {g_loss:.4f}")
 logging.info("GAN training finished.")
 
-# --- 8. Generate Synthetic Data ---
-logging.info(f"Generating {num_samples_to_generate} synthetic samples...")
+# --- 8. Generate Synthetic Data (in processed format initially) ---
+logging.info(f"Generating {num_samples_to_generate} synthetic samples (in processed format)...")
 noise_for_generation = np.random.normal(0, 1, (num_samples_to_generate, latent_dim))
-synthetic_data_generated_scaled = generator.predict(noise_for_generation, verbose=0)
+synthetic_data_processed = generator.predict(noise_for_generation, verbose=0)
+logging.info(f"Generated processed synthetic data. Shape: {synthetic_data_processed.shape}")
 
-# De-normalize the data to its original scale
-synthetic_data_generated = data_scaler.inverse_transform(synthetic_data_generated_scaled)
-logging.info(f"Generated and de-normalized synthetic data. Shape: {synthetic_data_generated.shape}")
-
-
-# --- 9. Save Synthetic Data to CSV ---
-# Create column names based on the original data or generic ones
-# If your original data had column names, you might want to use them.
-# For this example, we'll use generic feature names.
-column_names = [f'feature_{i+1}' for i in range(data_dim)]
-if dataset_path and dataset_path != 'your_dataset.csv': # Try to get original column names
-    try:
-        original_df_cols = pd.read_csv(dataset_path, nrows=0).columns[:data_dim]
-        if len(original_df_cols) == data_dim:
-            column_names = original_df_cols
-    except Exception:
-        logging.warning("Could not read original column names, using generic ones.")
-
-
-synthetic_df = pd.DataFrame(synthetic_data_generated, columns=column_names)
-csv_filename = 'synthetic_data.csv'
+# --- 9. Inverse Transform Synthetic Data and Save to CSV ---
 try:
-    synthetic_df.to_csv(csv_filename, index=False)
-    logging.info(f"Synthetic data successfully saved to {csv_filename}")
+    logging.info("Attempting to inverse transform synthetic data to original format...")
+    # The data_preprocessor (ColumnTransformer) expects a 2D array with the same number of columns
+    # it was fitted on (i.e., the processed_data_dim).
+    # The `inverse_transform` method will then apply the inverse of MinMaxScaler to the numerical parts
+    # and the inverse of OneHotEncoder to the categorical parts.
+
+    synthetic_data_reconstructed_np = data_preprocessor.inverse_transform(synthetic_data_processed)
+
+    # Convert the reconstructed numpy array back to a DataFrame with original column names
+    # The order of columns in `inverse_transform` output matches the order in `all_relevant_columns`
+    # used during fitting the preprocessor.
+    original_column_order = numerical_columns + categorical_columns
+    synthetic_df_reconstructed = pd.DataFrame(synthetic_data_reconstructed_np, columns=original_column_order)
+
+    logging.info(f"Synthetic data inverse transformed. Shape: {synthetic_df_reconstructed.shape}")
+
+    # Post-processing: Ensure correct data types for numerical columns if needed
+    # (MinMaxScaler's inverse_transform usually returns float)
+    for col in numerical_columns:
+        # If original numerical columns were integers, you might want to round and cast
+        # For example, if 'ttl' should be an integer:
+        # if col == 'ttl':
+        #    synthetic_df_reconstructed[col] = pd.to_numeric(synthetic_df_reconstructed[col], errors='coerce').round().astype('Int64')
+        # else:
+        synthetic_df_reconstructed[col] = pd.to_numeric(synthetic_df_reconstructed[col], errors='coerce')
+
+    # For categorical columns, OneHotEncoder's inverse_transform returns them as objects (strings)
+    # which is usually what's desired.
+
+    csv_filename = 'synthetic_data_resembling_original.csv'
+    synthetic_df_reconstructed.to_csv(csv_filename, index=False)
+    logging.info(f"Synthetic data resembling original format successfully saved to {csv_filename}")
+
 except Exception as e:
-    logging.error(f"Error saving synthetic data to CSV: {e}")
+    logging.error(f"Error during inverse transformation or saving CSV: {e}")
+    logging.warning(
+        "Saving processed data instead (before inverse transform) to 'synthetic_data_processed_fallback.csv'")
+    # Fallback: save the processed data if inverse transform fails, so output is not lost
+    # Need to get column names for the processed data for this fallback
+    try:
+        processed_feature_names = data_preprocessor.get_feature_names_out()
+    except Exception:  # Older sklearn might not have get_feature_names_out directly on ColumnTransformer
+        processed_feature_names = [f"proc_feat_{i}" for i in range(synthetic_data_processed.shape[1])]
+
+    synthetic_df_processed_fallback = pd.DataFrame(synthetic_data_processed, columns=processed_feature_names)
+    synthetic_df_processed_fallback.to_csv('synthetic_data_processed_fallback.csv', index=False)
 
 logging.info("Script finished.")
