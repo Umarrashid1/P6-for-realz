@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
-from .config import numerical_columns  # List of your numeric feature columns
+from .config import numerical_columns_flows  # List of your numeric feature columns
 
 def compute_and_save_global_stats(dataset_dir, output_file):
     all_data = []
@@ -14,7 +14,7 @@ def compute_and_save_global_stats(dataset_dir, output_file):
 
             file_path = os.path.join(root, file)
             try:
-                df = pd.read_csv(file_path, engine="pyarrow", usecols=numerical_columns).astype("float32")
+                df = pd.read_csv(file_path, engine="pyarrow", usecols=numerical_columns_flows).astype("float32")
             except Exception as e:
                 print(f"[SKIP] Error reading {file_path}: {e}")
                 continue
@@ -23,11 +23,11 @@ def compute_and_save_global_stats(dataset_dir, output_file):
                 continue
 
             # Add missing numeric columns as NaNs
-            missing = [col for col in numerical_columns if col not in df.columns]
+            missing = [col for col in numerical_columns_flows if col not in df.columns]
             for col in missing:
                 df[col] = np.nan
 
-            df = df[numerical_columns]  # Ensure column order
+            df = df[numerical_columns_flows]  # Ensure column order
             all_data.append(df)
 
     if not all_data:
@@ -59,14 +59,14 @@ def compute_and_save_global_stats(dataset_dir, output_file):
         output_file,
         mean=global_means,
         std=global_stds,
-        cols=np.array(numerical_columns),
+        cols=np.array(numerical_columns_flows),
         clip_low=clip_low.values,
         clip_high=clip_high.values,
         median=medians.values,
     )
 
     print(f"[INFO] Saved global stats to {output_file}")
-    print(f"[INFO] Columns: {numerical_columns}")
+    print(f"[INFO] Columns: {numerical_columns_flows}")
     print(f"[INFO] Mean: {global_means}")
     print(f"[INFO] Std: {global_stds}")
     print(f"[INFO] Clip low: {clip_low.values}")
@@ -75,6 +75,6 @@ def compute_and_save_global_stats(dataset_dir, output_file):
 
 if __name__ == "__main__":
     compute_and_save_global_stats(
-        dataset_dir="../../dataset/raw_dataset",
-        output_file="standardization_stats.npz"
+        dataset_dir="../../dataset/roni/DatasetFlow",
+        output_file="flow_standardization_stats.npz"
     )
