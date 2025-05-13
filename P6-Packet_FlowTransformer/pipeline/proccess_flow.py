@@ -58,7 +58,7 @@ CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 logging.info(f"Checkpoint directory: {CHECKPOINT_DIR}")
 
 # ── Load global numeric stats ───────────────────────────────────────────────
-STD_STATS_PATH = "standardization_stats.npz"  # This path should ideally point to FLOW-specific stats
+STD_STATS_PATH = "standardization_stats_flows.npz"  # This path should ideally point to FLOW-specific stats
 logging.warning("🚨 CRITICAL WARNING: Using existing 'standardization_stats.npz'. 🚨")
 logging.warning("   This file was likely generated for PACKET features, not FLOW features.")
 logging.warning("   Applying these stats to flow numerical features WILL LIKELY lead to incorrect scaling.")
@@ -308,7 +308,7 @@ if __name__ == "__main__":
 
     # --- Configuration for direct run ---
     # **** USER: Adjust these paths and settings for your FLOW data ****
-    FLOW_DATA_INPUT_DIR = '../../dataset/raw_flows'  # INPUT: Directory with raw FLOW CSVs
+    FLOW_DATA_INPUT_DIR = '../../dataset/roni/DatasetFlow',  # INPUT: Directory with raw FLOW CSVs
     FLOW_DATA_OUTPUT_PT = '../../dataset/processed_flows.pt'  # OUTPUT: Where the final .pt file will be saved
 
     # This should point to a category_mappings.json file generated for your FLOW features
