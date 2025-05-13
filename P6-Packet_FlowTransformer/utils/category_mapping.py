@@ -5,14 +5,14 @@ import concurrent.futures
 from pathlib import Path
 import ast
 from . import io_utils
-from pipeline.config import categorical_columns
+from pipeline.config import categorical_columns_flows
 
 
 def generate_and_save_category_mappings(
     dataset_dir: str,
     test_mode: bool = False,
     rows_per_file: int = 20_000,
-    path: str = "category_mappings.json",
+    path: str = "category_mappings_flows.json",
 ):
     all_files = io_utils.list_csv_files(dataset_dir)
 
@@ -31,7 +31,7 @@ def generate_and_save_category_mappings(
 
     # ── 2. Build mappings column‑wise ──────────────────────────────────────
     mappings: dict[str, dict[str, int]] = {}
-    for col in categorical_columns:
+    for col in categorical_columns_flows:
         raw_vals = combined_df[col].dropna().unique().tolist()
 
         # Remove 'unknown' if present, then append explicitly
@@ -53,7 +53,7 @@ def generate_and_save_category_mappings(
     return mappings
 
 
-def load_mappings(path="category_mappings.json"):
+def load_mappings(path="category_mappings_flows.json"):
     with open(path, "r") as f:
         raw = json.load(f)
     return {
@@ -63,4 +63,4 @@ def load_mappings(path="category_mappings.json"):
 
 
 if __name__ == "__main__":
-    generate_and_save_category_mappings(dataset_dir="../../dataset/raw_dataset")
+    generate_and_save_category_mappings(dataset_dir="../../dataset/roni/DatasetFlow",)

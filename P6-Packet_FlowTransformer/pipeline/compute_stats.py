@@ -14,7 +14,7 @@ def compute_and_save_global_stats(dataset_dir, output_file):
 
             file_path = os.path.join(root, file)
             try:
-                df = pd.read_csv(file_path, engine="pyarrow", usecols=numerical_columns).astype("float32")
+                df = pd.read_csv(file_path, engine="pyarrow", usecols=numerical_columns_flows).astype("float32")
             except Exception as e:
                 print(f"[SKIP] Error reading {file_path}: {e}")
                 continue
@@ -59,7 +59,7 @@ def compute_and_save_global_stats(dataset_dir, output_file):
         output_file,
         mean=global_means,
         std=global_stds,
-        cols=np.array(numerical_columns),
+        cols=np.array(numerical_columns_flows),
         clip_low=clip_low.values,
         clip_high=clip_high.values,
         median=medians.values,
