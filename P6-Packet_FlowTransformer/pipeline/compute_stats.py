@@ -75,6 +75,6 @@ def compute_and_save_global_stats(dataset_dir, output_file):
 
 if __name__ == "__main__":
     compute_and_save_global_stats(
-        dataset_dir="../../dataset/raw_dataset",
-        output_file="standardization_stats.npz"
+        dataset_dir="../../dataset/roni/DatasetFlow",
+        output_file="flow_standardization_stats.npz"
     )
