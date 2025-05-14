@@ -57,7 +57,7 @@ if __name__ == "__main__":
 
     # **** USER: Set this to the actual .pt file you want to check ****
     # Ensure this path is correct relative to where check_pt.py is run from
-    target_pt_file_to_check = "../../dataset/processed_flows.pt"  # Or your mini_flow.pt etc.
+    target_pt_file_to_check = "../../../dataset/processed_flows.pt"  # Or your mini_flow.pt etc.
 
     if Path(target_pt_file_to_check).exists():
         validate_pt_file(target_pt_file_to_check)
