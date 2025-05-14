@@ -31,7 +31,7 @@ CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 logging.info(f"Checkpoint directory: {CHECKPOINT_DIR}")
 
 # ── Load global numeric stats ───────────────────────────────────────────────
-STD_STATS_PATH = "standardization_stats_flows.npz"  # This path should ideally point to FLOW-specific stats
+STD_STATS_PATH = "flow_standardization_stats.npz"  # This path should ideally point to FLOW-specific stats
 _std_stats = np.load(STD_STATS_PATH)
 STD_COLS = _std_stats["cols"].tolist()
 GLOBAL_MEAN = dict(zip(STD_COLS, _std_stats["mean"]))

@@ -28,7 +28,7 @@ CHECKPOINT_DIR = Path("checkpoints") / timestamp
 CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Load global numeric stats ───────────────────────────────────────────────
-STD_STATS_PATH = "standardization_stats.npz"
+STD_STATS_PATH = "packet_standardization_stats.npz"
 _std_stats = np.load(STD_STATS_PATH)
 STD_COLS = _std_stats["cols"].tolist()
 GLOBAL_MEAN = dict(zip(STD_COLS, _std_stats["mean"]))
