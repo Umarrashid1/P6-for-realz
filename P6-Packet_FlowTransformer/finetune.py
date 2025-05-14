@@ -3,7 +3,7 @@ import torch
 from torch.utils.data import random_split
 import json  # For loading the configuration file
 from pathlib import Path  # For path handling
-from pipeline.iot_flow_dataset import IoTFlowDataset
+from pipeline.iot_flowdataset import IoTFlowDataset
 from models.transformer import IoTTransformer
 from models.flow_finetuning_model import FlowFineTuningModel
 from train.train_flows import fine_tune_flow_model, test_flow_model
@@ -56,9 +56,9 @@ def freeze_transformer_body(model: FlowFineTuningModel):
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Paths
-FLOW_DATASET_PATH = "../../dataset/mini_flow.pt"  # Your preprocessed "pure flow" .pt file
+FLOW_DATASET_PATH = "../../dataset/processed_flows.pt"  # Your preprocessed "pure flow" .pt file
 PACKET_MODEL_CHECKPOINT_DIR = Path("checkpoints_packet_model")  # Where packet model & config were saved
-PRETRAINED_PACKET_MODEL_WEIGHTS = PACKET_MODEL_CHECKPOINT_DIR / "iot_transformer_pretrained_small.pt"  # Or "model_best.pt"
+PRETRAINED_PACKET_MODEL_WEIGHTS = PACKET_MODEL_CHECKPOINT_DIR / "model_best.pt"  # Or "model_best.pt"
 PACKET_MODEL_CONFIG_PATH = PACKET_MODEL_CHECKPOINT_DIR / "iot_transformer_config.json"
 FINETUNED_MODEL_SAVE_DIR = "checkpoints_flow_finetuned_vMain"
 
