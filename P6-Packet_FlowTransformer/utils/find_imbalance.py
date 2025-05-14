@@ -4,7 +4,7 @@ import pandas as pd
 import logging
 from typing import List, Tuple, Optional, Dict, DefaultDict
 from collections import defaultdict
-from io_utils import list_csv_files, load_csv_file
+from .io_utils import list_csv_files, load_csv_file
 
 
 
