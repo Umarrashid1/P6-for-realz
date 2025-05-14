@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
-from config import numerical_columns_flows, numerical_columns_packets
+from pipeline.config import numerical_columns_flows, numerical_columns_packets
 
 IS_FLOW = False  # Set to True for flow stats, False for packet stats
 
