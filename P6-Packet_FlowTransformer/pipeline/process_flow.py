@@ -59,11 +59,6 @@ logging.info(f"Checkpoint directory: {CHECKPOINT_DIR}")
 
 # ── Load global numeric stats ───────────────────────────────────────────────
 STD_STATS_PATH = "standardization_stats_flows.npz"  # This path should ideally point to FLOW-specific stats
-logging.warning("🚨 CRITICAL WARNING: Using existing 'standardization_stats.npz'. 🚨")
-logging.warning("   This file was likely generated for PACKET features, not FLOW features.")
-logging.warning("   Applying these stats to flow numerical features WILL LIKELY lead to incorrect scaling.")
-logging.warning("   It is STRONGLY recommended to generate and use standardization stats")
-logging.warning("   derived specifically from your FLOW numerical features for this script to be correct.")
 try:
     _std_stats = np.load(STD_STATS_PATH)
     STD_COLS = _std_stats["cols"].tolist()
@@ -178,7 +173,7 @@ def preprocess_flow_vectors_from_csvs(  # Renamed main function
         rows_per_file: int = 20000,
         # max_seq_len no longer needed
 ):
-    all_files = io_utils.list_csv_files(dataset_dir, recursive=True)  # Assuming recursive
+    all_files = io_utils.list_csv_files(dataset_dir)  # Assuming recursive
     logging.info(f"[START] Found {len(all_files)} CSV files for flow vector processing.")
 
     # Checkpoint logic: saves processed data from each file
