@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import List, Tuple, Dict, Optional  # Added Dict
 import logging
 import datetime
-from config import categorical_columns_flows, numerical_columns_flows, LABEL_MAPPING
+from .config import categorical_columns_flows, numerical_columns_flows, LABEL_MAPPING
 from utils import io_utils
 from utils import category_mapping
 
