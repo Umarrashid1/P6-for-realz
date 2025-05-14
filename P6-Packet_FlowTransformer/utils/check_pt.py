@@ -5,7 +5,7 @@ import pandas as pd
 from pipeline.config import categorical_columns, numerical_columns
 
 # === CONFIG ===
-OUTPUT_FILE = Path("../../dataset/packet_small.pt")
+OUTPUT_FILE = Path("../../../dataset/processed_flows.pt")
 
 
 def validate_pt_file(pt_path: Path):
