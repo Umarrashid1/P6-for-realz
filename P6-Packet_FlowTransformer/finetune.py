@@ -56,7 +56,7 @@ def freeze_transformer_body(model: FlowFineTuningModel):
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Paths
-FLOW_DATASET_PATH = "../../dataset/processed_flows.pt"  # Your preprocessed "pure flow" .pt file
+FLOW_DATASET_PATH = "../../../dataset/processed_flows.pt"  # Your preprocessed "pure flow" .pt file
 PACKET_MODEL_CHECKPOINT_DIR = Path("checkpoints_packet_model")  # Where packet model & config were saved
 PRETRAINED_PACKET_MODEL_WEIGHTS = PACKET_MODEL_CHECKPOINT_DIR / "model_best.pt"  # Or "model_best.pt"
 PACKET_MODEL_CONFIG_PATH = PACKET_MODEL_CHECKPOINT_DIR / "packet_config.json"
