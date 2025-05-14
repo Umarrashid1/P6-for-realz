@@ -88,7 +88,7 @@ def train_model(
             packet_seq = batch["packet_seq"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["label"].to(device)
-            cat_feats = {c: batch[c].to(device) for c in categorical_columns}
+            cat_feats = {c: batch[c].to(device) for c in categorical_columns_packets}
 
             # ── Diagnostics & finite‑check before forward ─────────────────
             if batch_idx == 0 and epoch == 1: # Only print extensive checks once
@@ -139,7 +139,7 @@ def train_model(
                 packet_seq = batch["packet_seq"].to(device)
                 attention_mask = batch["attention_mask"].to(device)
                 labels = batch["label"].to(device)
-                cat_feats = {c: batch[c].to(device) for c in categorical_columns}
+                cat_feats = {c: batch[c].to(device) for c in categorical_columns_packets}
                 logits = model(packet_seq, cat_feats, attention_mask=attention_mask)
                 val_preds.extend(logits.argmax(1).cpu().tolist())
                 val_labels.extend(labels.cpu().tolist())
@@ -211,7 +211,7 @@ def test_model(model: nn.Module, test_dataset, batch_size=64, device="cuda", mod
             packet_seq = batch["packet_seq"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["label"].to(device)
-            cat_feats = {c: batch[c].to(device) for c in categorical_columns}
+            cat_feats = {c: batch[c].to(device) for c in categorical_columns_packets}
             logits = model(packet_seq, cat_feats, attention_mask=attention_mask)
             preds = logits.argmax(1)
             preds_all.extend(preds.cpu().tolist())
