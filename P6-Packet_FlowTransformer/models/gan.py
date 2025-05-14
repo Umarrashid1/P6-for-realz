@@ -35,7 +35,9 @@ d_lr = 0.0002
 beta1 = 0.5  # Adam optimizer beta1
 
 # Determine device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda")
+
 logging.info(f"Using device: {device}")
 
 
