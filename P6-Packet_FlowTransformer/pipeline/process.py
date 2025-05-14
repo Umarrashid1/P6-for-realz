@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Tuple
 import logging
 import datetime
-from .config import categorical_columns, numerical_columns, LABEL_MAPPING
+from .config import categorical_columns_packets, numerical_columns_packets, LABEL_MAPPING
 from utils import io_utils
 from utils import category_mapping
 
@@ -28,7 +28,7 @@ CHECKPOINT_DIR = Path("checkpoints") / timestamp
 CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Load global numeric stats ───────────────────────────────────────────────
-STD_STATS_PATH = "standardization_stats.npz"
+STD_STATS_PATH = "packet_standardization_stats.npz"
 _std_stats = np.load(STD_STATS_PATH)
 STD_COLS = _std_stats["cols"].tolist()
 GLOBAL_MEAN = dict(zip(STD_COLS, _std_stats["mean"]))
@@ -48,7 +48,7 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
         return file_path, [], [], [], {}
 
     required_flow_cols = ["stream"]
-    required_cols = numerical_columns + categorical_columns + required_flow_cols
+    required_cols = numerical_columns_packets + categorical_columns_packets + required_flow_cols
 
     missing_cols = [c for c in required_cols if c not in df.columns]
     if missing_cols:
@@ -59,15 +59,15 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
 
 
     # Clip, fill, and standardize using global stats
-    for col in numerical_columns:
+    for col in numerical_columns_packets:
         df[col] = df[col].clip(lower=CLIP_LOW[col], upper=CLIP_HIGH[col])
         df[col] = df[col].fillna(GLOBAL_MEDIAN[col])
         df[col] = (df[col] - GLOBAL_MEAN[col]) / (GLOBAL_STD[col] + EPS)
 
-    df[categorical_columns] = df[categorical_columns].fillna("unknown")
+    df[categorical_columns_packets] = df[categorical_columns_packets].fillna("unknown")
 
-    cat_mappings = category_mapping.load_mappings()
-    for col in categorical_columns:
+    cat_mappings = category_mapping.load_mappings(is_flow=False)
+    for col in categorical_columns_packets:
         mapping = cat_mappings[col]
         unknown_id = mapping["unknown"]
         df[col] = df[col].apply(lambda x: mapping.get(x, unknown_id)).astype(int)
@@ -78,11 +78,11 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
     pkt_arrays: List[np.ndarray] = []
     label_list: List[int] = []
     mask_arrays: List[np.ndarray] = []
-    cat_arrays: dict[str, List[np.ndarray]] = {col: [] for col in categorical_columns}
+    cat_arrays: dict[str, List[np.ndarray]] = {col: [] for col in categorical_columns_packets}
 
     for _, flow_df in flow_groups:
-        num_feat = flow_df[numerical_columns].values
-        cat_feat = {col: flow_df[col].values for col in categorical_columns}
+        num_feat = flow_df[numerical_columns_packets].values
+        cat_feat = {col: flow_df[col].values for col in categorical_columns_packets}
         flow_len = len(num_feat)
 
         def pad_and_append(start_idx, end_idx):
@@ -90,16 +90,16 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
             pkt_arrays.append(num_slice.astype(np.float32))
             mask_arrays.append(np.ones(max_seq_len, dtype=np.float32))
             label_list.append(label)
-            for col in categorical_columns:
+            for col in categorical_columns_packets:
                 cat_arrays[col].append(cat_feat[col][start_idx:end_idx].astype(np.int64))
 
         if flow_len < max_seq_len:
             pad_len = max_seq_len - flow_len
-            pkt = np.concatenate([num_feat, np.zeros((pad_len, len(numerical_columns)), dtype=np.float32)], axis=0)
+            pkt = np.concatenate([num_feat, np.zeros((pad_len, len(numerical_columns_packets)), dtype=np.float32)], axis=0)
             pkt_arrays.append(pkt)
             mask_arrays.append(np.concatenate([np.ones(flow_len), np.zeros(pad_len)]).astype(np.float32))
             label_list.append(label)
-            for col in categorical_columns:
+            for col in categorical_columns_packets:
                 unknown_id = cat_mappings[col]["unknown"]
                 padded = np.pad(cat_feat[col], (0, pad_len), constant_values=unknown_id)
                 cat_arrays[col].append(padded.astype(np.int64))
@@ -144,20 +144,20 @@ def preprocess_flows_as_sequences(
                 "label": torch.tensor(lbls, dtype=torch.long),
                 "attention_mask": torch.tensor(np.stack(masks), dtype=torch.float32),
             }
-            for col in categorical_columns:
+            for col in categorical_columns_packets:
                 shard[col] = torch.tensor(np.stack(cat_arrs[col]), dtype=torch.long)
             torch.save(shard, CHECKPOINT_DIR / (Path(file_path).stem + ".pt"))
             logging.info(f"[CKPT] wrote {file_path}")
 
     pkt_tensors, lbl_tensors, msk_tensors = [], [], []
-    cat_tensors = {col: [] for col in categorical_columns}
+    cat_tensors = {col: [] for col in categorical_columns_packets}
 
     for sf in sorted(CHECKPOINT_DIR.glob("*.pt")):
         data = torch.load(sf)
         pkt_tensors.append(data["packet_seq"])
         lbl_tensors.append(data["label"])
         msk_tensors.append(data["attention_mask"])
-        for col in categorical_columns:
+        for col in categorical_columns_packets:
             cat_tensors[col].append(data[col])
 
     output = {
@@ -165,7 +165,7 @@ def preprocess_flows_as_sequences(
         "label": torch.cat(lbl_tensors, dim=0),
         "attention_mask": torch.cat(msk_tensors, dim=0),
     }
-    for col in categorical_columns:
+    for col in categorical_columns_packets:
         output[col] = torch.cat(cat_tensors[col], dim=0)
 
     torch.save(output, output_file)

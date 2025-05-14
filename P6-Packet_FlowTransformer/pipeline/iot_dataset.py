@@ -18,7 +18,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import Dataset
 
-from .config import categorical_columns  # adjust import path if different
+from .config import categorical_columns_packets  # adjust import path if different
 
 class IoTSequenceDataset(Dataset):
     """Loads the merged .pt file and yields item‑level tensors."""
@@ -30,7 +30,7 @@ class IoTSequenceDataset(Dataset):
         self.packet_seqs     = data["packet_seq"]       # [N, T, F_num]
         self.labels          = data["label"]            # [N]
         self.attention_masks = data["attention_mask"]   # [N, T]
-        self.cat_tensors     = {col: data[col] for col in categorical_columns}
+        self.cat_tensors     = {col: data[col] for col in categorical_columns_packets}
 
         self.max_seq_len = max_seq_len
 
@@ -56,6 +56,6 @@ class IoTSequenceDataset(Dataset):
             "label":          self.labels[idx],
         }
         # Attach categorical ids
-        for col in categorical_columns:
+        for col in categorical_columns_packets:
             item[col] = self.cat_tensors[col][idx]
         return item

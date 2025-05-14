@@ -9,36 +9,9 @@ from pathlib import Path
 from typing import List, Tuple, Dict, Optional  # Added Dict
 import logging
 import datetime
-
-# --- Configuration ---
-# Attempt to import flow-specific columns first, then fall back or error
-try:
-    from config import categorical_columns_flows, numerical_columns_flows, LABEL_MAPPING
-
-    print("✅ Using flow-specific columns from .config")
-except ImportError:
-    print("⚠️ '.config' not found or flow-specific columns missing. Attempting 'pipeline.config'.")
-    try:
-        from pipeline.config import categorical_columns_flows, numerical_columns_flows, LABEL_MAPPING
-
-        print("✅ Using flow-specific columns from pipeline.config")
-    except ImportError:
-        print("❌ CRITICAL: Could not import flow-specific column lists or LABEL_MAPPING.")
-        print("   Ensure 'categorical_columns_flows', 'numerical_columns_flows', and 'LABEL_MAPPING' are defined.")
-        exit(1)
-    except AttributeError:
-        print("❌ CRITICAL: 'categorical_columns_flows' or 'numerical_columns_flows' not defined in config.")
-        exit(1)
-
-# Assuming utils are in a directory accessible from where this script is run
-# (e.g., if this script is in 'pipeline/', and 'utils/' is a sibling or in PYTHONPATH)
-try:
-    from utils import io_utils
-    from utils import category_mapping
-except ImportError:
-    print("❌ CRITICAL: Could not import 'utils.io_utils' or 'utils.category_mapping'.")
-    print("   Ensure the 'utils' directory is correctly placed and importable.")
-    exit(1)
+from config import categorical_columns_flows, numerical_columns_flows, LABEL_MAPPING
+from utils import io_utils
+from utils import category_mapping
 
 # ── Set up timestamp and logging ──────────────────────────────────────────
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -58,23 +31,18 @@ CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 logging.info(f"Checkpoint directory: {CHECKPOINT_DIR}")
 
 # ── Load global numeric stats ───────────────────────────────────────────────
-STD_STATS_PATH = "standardization_stats_flows.npz"  # This path should ideally point to FLOW-specific stats
-try:
-    _std_stats = np.load(STD_STATS_PATH)
-    STD_COLS = _std_stats["cols"].tolist()
-    GLOBAL_MEAN = dict(zip(STD_COLS, _std_stats["mean"]))
-    GLOBAL_STD = dict(zip(STD_COLS, _std_stats["std"]))
-    GLOBAL_MEDIAN = dict(zip(STD_COLS, _std_stats["median"]))
-    CLIP_LOW = dict(zip(STD_COLS, _std_stats["clip_low"]))
-    CLIP_HIGH = dict(zip(STD_COLS, _std_stats["clip_high"]))
-    EPS = 1e-6
-    logging.info(f"Loaded standardization stats from {STD_STATS_PATH} (intended for packets).")
-except FileNotFoundError:
-    logging.error(f"❌ Standardization stats file not found: {STD_STATS_PATH}. Cannot proceed with standardization.")
-    raise  # Stop if stats are missing and standardization is expected
-except Exception as e:
-    logging.error(f"❌ Error loading standardization stats: {e}")
-    raise
+STD_STATS_PATH = "flow_standardization_stats.npz"  # This path should ideally point to FLOW-specific stats
+_std_stats = np.load(STD_STATS_PATH)
+STD_COLS = _std_stats["cols"].tolist()
+GLOBAL_MEAN = dict(zip(STD_COLS, _std_stats["mean"]))
+GLOBAL_STD = dict(zip(STD_COLS, _std_stats["std"]))
+GLOBAL_MEDIAN = dict(zip(STD_COLS, _std_stats["median"]))
+CLIP_LOW = dict(zip(STD_COLS, _std_stats["clip_low"]))
+CLIP_HIGH = dict(zip(STD_COLS, _std_stats["clip_high"]))
+EPS = 1e-6
+logging.info(f"Loaded standardization stats from {STD_STATS_PATH} (intended for packets).")
+
+
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -301,8 +269,8 @@ if __name__ == "__main__":
 
     # --- Configuration for direct run ---
     # **** USER: Adjust these paths and settings for your FLOW data ****
-    FLOW_DATA_INPUT_DIR = '../../dataset/roni/DatasetFlow'  # INPUT: Directory with raw FLOW CSVs
-    FLOW_DATA_OUTPUT_PT = '../../dataset/processed_flows.pt'  # OUTPUT: Where the final .pt file will be saved
+    FLOW_DATA_INPUT_DIR = '../../../dataset/roni/DatasetFlow'  # INPUT: Directory with raw FLOW CSVs
+    FLOW_DATA_OUTPUT_PT = '../../../dataset/processed_flows.pt'  # OUTPUT: Where the final .pt file will be saved
 
     # This should point to a category_mappings.json file generated for your FLOW features
     # For simplicity, the script assumes a default "category_mappings.json" if not specified.

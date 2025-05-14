@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 from collections import defaultdict
-from pipeline.config import categorical_columns, numerical_columns  # adjust if needed
+from pipeline.config import categorical_columns_packets, numerical_columns_packets  # adjust if needed
 
 DATASET_DIR = "/ceph/project/P6-iot-flow-ids/dataset/raw_dataset/DatasetAnomaly"
 
@@ -27,19 +27,19 @@ for root, _, files in os.walk(DATASET_DIR):
             }
 
             # Check columns
-            info["missing_num"] = [col for col in numerical_columns if col not in df.columns]
-            info["missing_cat"] = [col for col in categorical_columns if col not in df.columns]
+            info["missing_num"] = [col for col in numerical_columns_packets if col not in df.columns]
+            info["missing_cat"] = [col for col in categorical_columns_packets if col not in df.columns]
 
             if not info["missing_num"]:
-                num_df = df[numerical_columns].astype(np.float32)
+                num_df = df[numerical_columns_packets].astype(np.float32)
                 info["nan_num"] = int(num_df.isna().sum().sum())
 
             if not info["missing_cat"]:
-                cat_df = df[categorical_columns].astype("category")
+                cat_df = df[categorical_columns_packets].astype("category")
                 info["nan_cat"] = int(cat_df.isna().sum().sum())
 
                 # Track max unique values (cardinalities)
-                for col in categorical_columns:
+                for col in categorical_columns_packets:
                     count = len(cat_df[col].cat.categories)
                     cardinalities[col] = max(cardinalities[col], count)
 
