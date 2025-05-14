@@ -47,8 +47,8 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
         logging.warning(f"[SKIP] No label for: {file_path}")
         return file_path, [], [], [], {}
 
-    required_flow_cols = ["stream"]
-    required_cols = numerical_columns_packets + categorical_columns_packets + required_flow_cols
+    required_packet_seq_cols = ["stream"]
+    required_cols = numerical_columns_packets + categorical_columns_packets + required_packet_seq_cols
 
     missing_cols = [c for c in required_cols if c not in df.columns]
     if missing_cols:
@@ -73,17 +73,17 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
         df[col] = df[col].apply(lambda x: mapping.get(x, unknown_id)).astype(int)
 
 
-    flow_groups = df.groupby("stream", sort=False)
+    packet_groups = df.groupby("stream", sort=False)
 
     pkt_arrays: List[np.ndarray] = []
     label_list: List[int] = []
     mask_arrays: List[np.ndarray] = []
     cat_arrays: dict[str, List[np.ndarray]] = {col: [] for col in categorical_columns_packets}
 
-    for _, flow_df in flow_groups:
-        num_feat = flow_df[numerical_columns_packets].values
-        cat_feat = {col: flow_df[col].values for col in categorical_columns_packets}
-        flow_len = len(num_feat)
+    for _, packet_seq_df in packet_groups:
+        num_feat = packet_seq_df[numerical_columns_packets].values
+        cat_feat = {col: packet_seq_df[col].values for col in categorical_columns_packets}
+        packet_seq_len = len(num_feat)
 
         def pad_and_append(start_idx, end_idx):
             num_slice = num_feat[start_idx:end_idx]
@@ -93,11 +93,11 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
             for col in categorical_columns_packets:
                 cat_arrays[col].append(cat_feat[col][start_idx:end_idx].astype(np.int64))
 
-        if flow_len < max_seq_len:
-            pad_len = max_seq_len - flow_len
+        if packet_seq_len < max_seq_len:
+            pad_len = max_seq_len - packet_seq_len
             pkt = np.concatenate([num_feat, np.zeros((pad_len, len(numerical_columns_packets)), dtype=np.float32)], axis=0)
             pkt_arrays.append(pkt)
-            mask_arrays.append(np.concatenate([np.ones(flow_len), np.zeros(pad_len)]).astype(np.float32))
+            mask_arrays.append(np.concatenate([np.ones(packet_seq_len), np.zeros(pad_len)]).astype(np.float32))
             label_list.append(label)
             for col in categorical_columns_packets:
                 unknown_id = cat_mappings[col]["unknown"]
@@ -105,16 +105,16 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
                 cat_arrays[col].append(padded.astype(np.int64))
         else:
             stride = max_seq_len // 2
-            for start in range(0, flow_len - max_seq_len + 1, stride):
+            for start in range(0, packet_seq_len - max_seq_len + 1, stride):
                 pad_and_append(start, start + max_seq_len)
-            if (flow_len - max_seq_len) % stride != 0:
-                pad_and_append(flow_len - max_seq_len, flow_len)
+            if (packet_seq_len - max_seq_len) % stride != 0:
+                pad_and_append(packet_seq_len - max_seq_len, packet_seq_len)
 
     return file_path, pkt_arrays, label_list, mask_arrays, cat_arrays
 
 # ──────────────────────────────────────────────────────────────────────────────
 
-def preprocess_flows_as_sequences(
+def create_packet_sequences(
     dataset_dir: str,
     output_file: str,
     test_mode: bool = False,
