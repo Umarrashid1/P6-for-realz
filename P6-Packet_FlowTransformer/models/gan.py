@@ -106,7 +106,7 @@ file_path = "../../../dataset/raw_dataset/DatasetAnomaly/Web-Based/Backdoor_Malw
 
 try:
     real_training_data_np, data_preprocessor, data_dim = load_and_preprocess_real_data(
-        file_path, numerical_columns, categorical_columns
+        file_path, numerical_columns_packets, categorical_columns_packets
     )
     # Convert to PyTorch tensor
     real_training_data = torch.tensor(real_training_data_np, dtype=torch.float32).to(device)
@@ -263,11 +263,11 @@ try:
     logging.info("Attempting to inverse transform synthetic data to original format...")
     synthetic_data_reconstructed_np = data_preprocessor.inverse_transform(synthetic_data_processed_np)
 
-    original_column_order = numerical_columns + categorical_columns
+    original_column_order = numerical_columns_packets + categorical_columns_packets
     synthetic_df_reconstructed = pd.DataFrame(synthetic_data_reconstructed_np, columns=original_column_order)
     logging.info(f"Synthetic data inverse transformed. Shape: {synthetic_df_reconstructed.shape}")
 
-    for col in numerical_columns:
+    for col in numerical_columns_packets:
         synthetic_df_reconstructed[col] = pd.to_numeric(synthetic_df_reconstructed[col], errors='coerce')
 
     csv_filename = 'synthetic_data_resembling_original_pytorch.csv'
