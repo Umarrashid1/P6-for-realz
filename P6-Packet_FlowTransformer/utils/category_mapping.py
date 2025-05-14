@@ -4,7 +4,7 @@ import pandas as pd
 import concurrent.futures
 from pathlib import Path
 import ast
-import io_utils
+from . import io_utils
 from pipeline.config import categorical_columns_flows, categorical_columns_packets
 
 # 🔧 TOGGLE THIS ONLY
