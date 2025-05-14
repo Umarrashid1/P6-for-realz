@@ -19,19 +19,12 @@ class FlowFineTuningModel(nn.Module):
 
     def __init__(
             self,
-            # Parameters for new input layers for flow data
             num_flow_numerical_features: int,
-            flow_cat_cardinalities: List[int],  # List of cardinalities for each flow categorical feature
-
-            # Parameters matching the pre-trained transformer body
-            d_model: int,  # This is the 'embed_dim' of the pre-trained IoTTransformer
-
-            # Parameters for the new classification head
+            flow_cat_cardinalities: List[int],
+            d_model: int,
+            pretrained_transformer_encoder_body: nn.Module,  # Moved up
             num_classes: int,
-            classifier_dropout: float = 0.1,  # Dropout for the new classifier
-
-            # The actual pre-trained transformer encoder body
-            pretrained_transformer_encoder_body: nn.Module
+            classifier_dropout: float = 0.1  # Default param now after all non-default
     ):
         super().__init__()
         self.d_model = d_model
