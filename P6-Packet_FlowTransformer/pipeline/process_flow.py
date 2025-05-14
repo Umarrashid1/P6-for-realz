@@ -269,8 +269,8 @@ if __name__ == "__main__":
 
     # --- Configuration for direct run ---
     # **** USER: Adjust these paths and settings for your FLOW data ****
-    FLOW_DATA_INPUT_DIR = '../../dataset/roni/DatasetFlow'  # INPUT: Directory with raw FLOW CSVs
-    FLOW_DATA_OUTPUT_PT = '../../dataset/processed_flows.pt'  # OUTPUT: Where the final .pt file will be saved
+    FLOW_DATA_INPUT_DIR = '../../../dataset/roni/DatasetFlow'  # INPUT: Directory with raw FLOW CSVs
+    FLOW_DATA_OUTPUT_PT = '../../../dataset/processed_flows.pt'  # OUTPUT: Where the final .pt file will be saved
 
     # This should point to a category_mappings.json file generated for your FLOW features
     # For simplicity, the script assumes a default "category_mappings.json" if not specified.
