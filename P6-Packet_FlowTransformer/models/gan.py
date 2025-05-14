@@ -8,7 +8,7 @@ import logging
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from pipeline.config import numerical_columns, categorical_columns
+from pipeline.config import numerical_columns_packets, categorical_columns_packets
 
 # --- 0. Define your column lists ---
 # In a real scenario, you might load these from a config file or have them imported.
