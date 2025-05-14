@@ -188,7 +188,7 @@ def preprocess_flow_vectors_from_csvs(  # Renamed main function
     loaded_dfs_with_paths = []
     # Using ThreadPoolExecutor for I/O bound task of loading files
     with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as tpool:
-        futures = [tpool.submit(io_utils.load_csv, fp, test_mode, rows_per_file) for fp in pending_files]
+        futures = [tpool.submit(io_utils.load_csv_file, fp, test_mode, rows_per_file) for fp in pending_files]
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
             if result is not None:
