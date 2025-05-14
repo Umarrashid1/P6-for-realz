@@ -10,19 +10,15 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from pipeline.config import numerical_columns_packets, categorical_columns_packets
 
-# --- 0. Define your column lists ---
-# In a real scenario, you might load these from a config file or have them imported.
-# For this script, we define them directly.
-# The user had: from pipeline.config import numerical_columns, categorical_columns
-# We are defining them here to make the script self-contained.
 
+file_path = "../../dataset/raw_dataset/DatasetAnomaly/Web-Based/Backdoor_Malware/Backdoor_Malware.csv"
 
 # --- 1. Configure Logging ---
 logging.basicConfig(filename='gan_script_pytorch.log',
                     level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s',
                     filemode='w')
-logging.info("Script started (PyTorch version). Preprocessing will be applied and then reversed for final output.")
+logging.info("Script started. Preprocessing will be applied and then reversed for final output.")
 
 # --- 2. Define GAN Parameters & Device ---
 latent_dim = 100
@@ -104,7 +100,7 @@ def load_and_preprocess_real_data(file_path, numerical_cols, categorical_cols):
 
 
 
-file_path = "../../dataset/raw_dataset/DatasetAnomaly/Web-Based/Backdoor_Malware/Backdoor_Malware.csv"
+
 
 try:
     real_training_data_np, data_preprocessor, data_dim = load_and_preprocess_real_data(
@@ -122,7 +118,7 @@ except Exception as e:
     exit()
 
 
-# --- 4. Build the Generator (PyTorch) ---
+# --- 4. Build the Generator  ---
 class Generator(nn.Module):
     def __init__(self, latent_dim, output_dim):
         super(Generator, self).__init__()
@@ -142,13 +138,13 @@ class Generator(nn.Module):
             nn.Linear(512 if output_dim < 1024 else 1024, output_dim),
             nn.Tanh()  # Output matches scaled data range [-1, 1]
         )
-        logging.info("Generator model (PyTorch) built.")
+        logging.info("Generator model built.")
 
     def forward(self, z):
         return self.model(z)
 
 
-# --- 5. Build the Discriminator (PyTorch) ---
+# --- 5. Build the Discriminator ---
 class Discriminator(nn.Module):
     def __init__(self, input_dim):
         super(Discriminator, self).__init__()
@@ -162,7 +158,7 @@ class Discriminator(nn.Module):
             nn.Linear(256 if input_dim < 512 else 512, 1),
             nn.Sigmoid()  # Output probability (real/fake)
         )
-        logging.info("Discriminator model (PyTorch) built.")
+        logging.info("Discriminator model built.")
 
     def forward(self, data):
         return self.model(data)
@@ -181,7 +177,7 @@ adversarial_loss = nn.BCELoss().to(device)  # Binary Cross Entropy Loss
 
 logging.info("Models, optimizers, and loss function initialized.")
 
-# --- 7. Training the GAN (PyTorch) ---
+# --- 7. Training the GAN ---
 logging.info(f"Starting GAN training for {epochs} epochs on device: {device}")
 
 for epoch in range(epochs):
@@ -249,7 +245,7 @@ for epoch in range(epochs):
 
 logging.info("GAN training finished.")
 
-# --- 8. Generate Synthetic Data (PyTorch) ---
+# --- 8. Generate Synthetic Data ---
 logging.info(f"Generating {num_samples_to_generate} synthetic samples (in processed format)...")
 generator.eval()  # Set generator to evaluation mode
 with torch.no_grad():  # No need to track gradients
@@ -260,7 +256,7 @@ with torch.no_grad():  # No need to track gradients
 synthetic_data_processed_np = synthetic_data_processed_tensor.cpu().numpy()
 logging.info(f"Generated processed synthetic data (NumPy). Shape: {synthetic_data_processed_np.shape}")
 
-# --- 9. Inverse Transform Synthetic Data and Save to CSV (Same as TensorFlow version) ---
+# --- 9. Inverse Transform Synthetic Data and Save to CSV ---
 try:
     logging.info("Attempting to inverse transform synthetic data to original format...")
     synthetic_data_reconstructed_np = data_preprocessor.inverse_transform(synthetic_data_processed_np)
@@ -282,7 +278,7 @@ except Exception as e:
         "Saving processed data instead (before inverse transform) to 'synthetic_data_processed_fallback_pytorch.csv'")
     try:
         processed_feature_names = data_preprocessor.get_feature_names_out()
-    except AttributeError:  # Older sklearn might not have get_feature_names_out directly
+    except AttributeError:
         transformers = data_preprocessor.transformers_
         processed_feature_names = []
         for name, trans, cols in transformers:
