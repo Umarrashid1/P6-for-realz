@@ -93,7 +93,7 @@ def process_single_flow_file(args: Tuple[pd.DataFrame, str]) -> Tuple[
     # Apply category mappings
     try:
         # Ensure category_mappings.json is for FLOW features or is general enough
-        cat_mappings = category_mapping.load_mappings()  # Assumes default path "category_mappings.json"
+        cat_mappings = category_mapping.load_mappings(is_flow=True)  # Assumes default path "category_mappings.json"
         for col in categorical_columns_flows:
             if col in df_processed.columns:
                 if col not in cat_mappings:
@@ -285,12 +285,6 @@ if __name__ == "__main__":
         exit(1)
     # The script will try to load "standardization_stats.npz" and "category_mappings.json"
     # (default path for mappings). Ensure these exist and are appropriate for FLOW data.
-    if not os.path.exists(STD_STATS_PATH):
-        logging.warning(
-            f"🚨 Standardization stats file '{STD_STATS_PATH}' not found. Standardization will fail or use incorrect defaults if columns requiring it are present.")
-    if not os.path.exists("category_mappings.json"):  # Default path used by category_mapping.load_mappings()
-        logging.warning(
-            f"🚨 Default category mappings file 'category_mappings.json' not found. Categorical encoding might fail or be inconsistent.")
 
     # --- Run the preprocessing ---
     try:
