@@ -14,7 +14,7 @@ from sklearn.metrics import (
 from sklearn.utils.class_weight import compute_class_weight
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
-from pipeline.config import categorical_columns.packets
+from pipeline.config import categorical_columns_packets
 
 __all__ = ["train_model", "test_model"]
 
