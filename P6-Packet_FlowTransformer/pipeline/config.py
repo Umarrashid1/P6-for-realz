@@ -13,7 +13,7 @@ LABEL_MAPPING = {
 }
 
 # Categorical & numerical feature lists
-categorical_columns = [
+categorical_columns_packets = [
     'src_mac', 'dst_mac', 'src_ip', 'dst_ip', 'src_port', 'dst_port',
     'port_class_dst', 'l4_tcp', 'l4_udp', 'handshake_version',
     'handshake_ciphersuites', 'handshake_sig_hash_alg_len',
@@ -25,7 +25,7 @@ categorical_columns = [
 
 
 
-numerical_columns = [
+numerical_columns_packets = [
     'inter_arrival_time', 'time_since_previously_displayed_frame', 'ttl', 'eth_size', 'tcp_window_size',
     'payload_entropy', 'handshake_cipher_suites_length', 'handshake_extensions_length', 'dns_len_qry',
     'dns_interval', 'dns_len_ans', 'payload_length', 'http_content_len', 'icmp_data_size',

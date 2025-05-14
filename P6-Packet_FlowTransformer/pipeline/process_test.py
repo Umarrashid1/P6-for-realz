@@ -1,7 +1,7 @@
 import torch
 import os
 from .process import preprocess_all_in_memory
-from .config import categorical_columns, numerical_columns, LABEL_MAPPING
+from .config import categorical_columns_packets, numerical_columns_packets, LABEL_MAPPING
 
 def test_preprocess_subset(tmp_path):
     dataset_dir = '../dataset/raw_dataset'
@@ -27,8 +27,8 @@ def test_preprocess_subset(tmp_path):
 
 
     # Column shape checks
-    assert num.shape[1] == len(numerical_columns), "Unexpected number of numerical features"
-    assert cat.shape[1] == len(categorical_columns), "Unexpected number of categorical features"
+    assert num.shape[1] == len(numerical_columns_packets), "Unexpected number of numerical features"
+    assert cat.shape[1] == len(categorical_columns_packets), "Unexpected number of categorical features"
 
     # NaN check
     assert not torch.isnan(num).any(), "Numerical tensor contains NaNs"
