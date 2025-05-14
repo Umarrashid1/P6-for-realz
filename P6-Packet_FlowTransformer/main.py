@@ -42,7 +42,7 @@ model_arguments = {
 
 CONFIG_SAVE_DIR = Path("checkpoints_packet_model") # Define a directory for outputs
 CONFIG_SAVE_DIR.mkdir(parents=True, exist_ok=True) # Line 1: Ensure directory exists
-config_file_path = CONFIG_SAVE_DIR / "iot_transformer_config.json" # Line 2: Define full path
+config_file_path = CONFIG_SAVE_DIR / "packet_config.json" # Line 2: Define full path
 with open(config_file_path, 'w') as f: # Line 3
     json.dump(model_arguments, f, indent=4) # Line 4
 print(f"✅ Packet model config saved to {config_file_path}") # Line 5 (Status print)

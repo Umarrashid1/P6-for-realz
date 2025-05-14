@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from pipeline.config import numerical_columns_flows, numerical_columns_packets
 
-IS_FLOW = False  # Set to True for flow stats, False for packet stats
+IS_FLOW = True  # Set to True for flow stats, False for packet stats
 
 # Auto-set dataset path and output file
 DATASET_DIR = "../../../dataset/roni/DatasetFlow" if IS_FLOW else "../../../dataset/raw_dataset"
