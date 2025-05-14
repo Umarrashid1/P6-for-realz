@@ -24,7 +24,7 @@ def load_transformer_body_weights(target_model: FlowFineTuningModel, pretrained_
     except FileNotFoundError:
         print(f"❌ Error: Pretrained model file not found: {pretrained_checkpoint_path}")
         return False
-    PRETRAINED_BODY_PREFIX = "transformer_encoder."  # In IoTTransformer state_dict
+    PRETRAINED_BODY_PREFIX = "transformer."  # In IoTTransformer state_dict
     TARGET_BODY_PREFIX = "transformer_encoder_body."  # In FlowFineTuningModel
     body_weights = {TARGET_BODY_PREFIX + k[len(PRETRAINED_BODY_PREFIX):]: v
                     for k, v in pretrained_state_dict.items() if k.startswith(PRETRAINED_BODY_PREFIX)}
