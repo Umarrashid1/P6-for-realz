@@ -10,7 +10,7 @@ from .io_utils import list_csv_files, load_csv_file
 
 LOG_FILE_NAME = "directory_row_counts.log"
 
-TARGET_DATASET_DIRECTORY = "../../../dataset/raw_dataset"
+TARGET_DATASET_DIRECTORY = "../../dataset/raw_dataset"
 
 
 def setup_logging():
