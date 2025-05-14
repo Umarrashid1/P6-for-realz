@@ -23,7 +23,7 @@ full_dataset = IoTSequenceDataset(dataset_path, max_seq_len=64)
 print("Dataset loaded")
 
 # Init Transformer
-cat_map   = load_mappings()
+cat_map   = load_mappings(is_flow=False)
 cat_sizes = {col: len(cat_map[col]) for col in categorical_columns_packets}
 cat_pad   = {c: cat_map[c]["unknown"] for c in categorical_columns_packets}
 
