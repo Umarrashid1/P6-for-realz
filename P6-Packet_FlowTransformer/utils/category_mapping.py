@@ -8,7 +8,7 @@ from . import io_utils
 from pipeline.config import categorical_columns_flows, categorical_columns_packets
 
 # 🔧 TOGGLE THIS ONLY
-IS_FLOW = False  # Set to True for flow mappings, False for packet mappings
+IS_FLOW = True  # Set to True for flow mappings, False for packet mappings
 
 # Auto-set dataset path and output path
 DATASET_DIR = "../../../dataset/roni/DatasetFlow" if IS_FLOW else "../../../dataset/raw_dataset"
