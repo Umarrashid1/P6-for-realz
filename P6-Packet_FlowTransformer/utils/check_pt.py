@@ -55,7 +55,7 @@ if __name__ == "__main__":
     # Example: OUTPUT_FILE_FROM_FLOW_PREPROCESSING = "../../dataset/mini_flow.pt"
 
     # **** USER: Set this to the actual .pt file you want to check ****
-    target_pt_file_to_check = "../../../dataset/processed_flows.pt"  # Or mini_flow.pt
+    target_pt_file_to_check = "../../dataset/processed_flows.pt"  # Or mini_flow.pt
 
     if Path(target_pt_file_to_check).exists():
         validate_pt_file(target_pt_file_to_check)
