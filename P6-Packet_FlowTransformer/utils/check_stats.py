@@ -1,5 +1,5 @@
 import numpy as np
-stats = np.load("standardization_stats_flows.npz") # Make sure this is the correct file
+stats = np.load("flow_standardization_stats.npz") # Make sure this is the correct file
 print("Means:", stats['mean'])
 print("Std Devs:", stats['std'])
 print("Medians:", stats['median'])
