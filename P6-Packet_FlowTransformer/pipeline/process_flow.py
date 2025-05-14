@@ -6,7 +6,7 @@ import pandas as pd
 import torch
 import concurrent.futures
 from pathlib import Path
-from typing import List, Tuple, Dict  # Added Dict
+from typing import List, Tuple, Dict, Optional  # Added Dict
 import logging
 import datetime
 
