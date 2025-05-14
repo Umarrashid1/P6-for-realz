@@ -24,7 +24,7 @@ def load_transformer_body_weights(target_model: FlowFineTuningModel, pretrained_
     except FileNotFoundError:
         print(f"❌ Error: Pretrained model file not found: {pretrained_checkpoint_path}")
         return False
-    PRETRAINED_BODY_PREFIX = "transformer_encoder."  # In IoTTransformer state_dict
+    PRETRAINED_BODY_PREFIX = "transformer."  # In IoTTransformer state_dict
     TARGET_BODY_PREFIX = "transformer_encoder_body."  # In FlowFineTuningModel
     body_weights = {TARGET_BODY_PREFIX + k[len(PRETRAINED_BODY_PREFIX):]: v
                     for k, v in pretrained_state_dict.items() if k.startswith(PRETRAINED_BODY_PREFIX)}
@@ -56,7 +56,7 @@ def freeze_transformer_body(model: FlowFineTuningModel):
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Paths
-FLOW_DATASET_PATH = "../../dataset/processed_flows.pt"  # Your preprocessed "pure flow" .pt file
+FLOW_DATASET_PATH = "../../../dataset/processed_flows.pt"  # Your preprocessed "pure flow" .pt file
 PACKET_MODEL_CHECKPOINT_DIR = Path("checkpoints_packet_model")  # Where packet model & config were saved
 PRETRAINED_PACKET_MODEL_WEIGHTS = PACKET_MODEL_CHECKPOINT_DIR / "model_best.pt"  # Or "model_best.pt"
 PACKET_MODEL_CONFIG_PATH = PACKET_MODEL_CHECKPOINT_DIR / "packet_config.json"
