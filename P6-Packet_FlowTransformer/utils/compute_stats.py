@@ -23,7 +23,7 @@ def compute_and_save_global_stats():
             file_path = os.path.join(root, file)
             try:
                 # --- Minimal Change 1: Robust usecols ---
-                df_header = pd.read_csv(file_path, nrows=0, engine="pyarrow")
+                df_header = pd.read_csv(file_path, nrows=0)
                 cols_to_load = [col for col in numerical_columns if col in df_header.columns]
                 if not cols_to_load:
                     # print(f"[DEBUG] No relevant numerical columns from config found in {file_path}")
