@@ -66,7 +66,7 @@ def process_fragment(args) -> Tuple[str, List[np.ndarray], List[int], List[np.nd
 
     df[categorical_columns_packets] = df[categorical_columns_packets].fillna("unknown")
 
-    cat_mappings = category_mapping.load_mappings()
+    cat_mappings = category_mapping.load_mappings(is_flow=False)
     for col in categorical_columns_packets:
         mapping = cat_mappings[col]
         unknown_id = mapping["unknown"]
