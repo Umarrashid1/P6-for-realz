@@ -11,7 +11,7 @@ from pipeline.config import categorical_columns_flows, categorical_columns_packe
 IS_FLOW = False  # Set to True for flow mappings, False for packet mappings
 
 # Auto-set dataset path and output path
-DATASET_DIR = "../../dataset/roni/DatasetFlow" if IS_FLOW else "../../dataset/raw_dataset"
+DATASET_DIR = "../../../dataset/roni/DatasetFlow" if IS_FLOW else "../../../dataset/raw_dataset"
 OUTPUT_PATH = "category_mappings_flows.json" if IS_FLOW else "category_mappings_packets.json"
 
 def generate_and_save_category_mappings():
