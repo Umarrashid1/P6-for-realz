@@ -33,8 +33,8 @@ except ImportError:
 # Assuming utils are in a directory accessible from where this script is run
 # (e.g., if this script is in 'pipeline/', and 'utils/' is a sibling or in PYTHONPATH)
 try:
-    from .utils import io_utils
-    from .utils import category_mapping
+    from utils import io_utils
+    from utils import category_mapping
 except ImportError:
     print("❌ CRITICAL: Could not import 'utils.io_utils' or 'utils.category_mapping'.")
     print("   Ensure the 'utils' directory is correctly placed and importable.")
