@@ -59,7 +59,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 FLOW_DATASET_PATH = "../../dataset/processed_flows.pt"  # Your preprocessed "pure flow" .pt file
 PACKET_MODEL_CHECKPOINT_DIR = Path("checkpoints_packet_model")  # Where packet model & config were saved
 PRETRAINED_PACKET_MODEL_WEIGHTS = PACKET_MODEL_CHECKPOINT_DIR / "model_best.pt"  # Or "model_best.pt"
-PACKET_MODEL_CONFIG_PATH = PACKET_MODEL_CHECKPOINT_DIR / "iot_transformer_config.json"
+PACKET_MODEL_CONFIG_PATH = PACKET_MODEL_CHECKPOINT_DIR / "packet_config.json"
 FINETUNED_MODEL_SAVE_DIR = "checkpoints_flow_finetuned_vMain"
 
 # Fine-tuning Hyperparameters
