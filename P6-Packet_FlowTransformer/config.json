@@ -1,0 +1,50 @@
+{
+  "dataset_paths": {
+    "raw_packet_dir": "../../../dataset/raw_dataset",
+    "processed_packet_pt": "../../../dataset/packet_small.pt",
+    "raw_flow_dir": "../../../dataset/roni/DatasetFlow",
+    "processed_flow_pt": "../../../dataset/processed_flows.pt"
+  },
+  "model_architecture": {
+    "transformer_body": {
+      "d_model": 64,
+      "num_heads": 4,
+      "num_layers": 2,
+      "dropout": 0.1
+    },
+    "max_seq_len_packet": 64,
+    "num_classes_packet": 8,
+    "num_classes_flow": 8
+  },
+  "training_params": {
+    "pre_training_packet": {
+      "epochs": 5,
+      "lr": 3e-4,
+      "batch_size": 64
+    },
+    "fine_tuning_flow": {
+      "epochs": 10,
+      "lr": 5e-5,
+      "batch_size": 64
+    },
+    "baseline_flow_only": {
+      "epochs": 10,
+      "lr": 5e-5,
+      "batch_size": 64
+    }
+  },
+  "paths": {
+    "packet_model_save_dir": "checkpoints_packet_model",
+    "finetuned_model_save_dir": "checkpoints_flow_finetuned_vMain",
+    "flow_only_baseline_save_dir": "checkpoints_flow_only_baseline",
+    "log_dir": "logs",
+    "baseline_flow_only_log_file": "training_baseline_flow_only.log",
+    "finetuned_model_log_file": "training_finetuned_model.log",
+    "packet_pretraining_log_file": "training_packet_pretraining.log"
+  },
+  "general_settings": {
+    "device": "cuda",
+    "random_seed": 42,
+    "num_workers_loader": 12
+  }
+}
