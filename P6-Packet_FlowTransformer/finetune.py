@@ -271,4 +271,4 @@ except Exception as e:
     logging.error(traceback.format_exc())
     sys.exit(1)
 
-logging.info("\n🏁 main.py fine-tuning script finished. 🏁")  # Changed from print
+logging.info("\n🏁 pretrain.py fine-tuning script finished. 🏁")  # Changed from print
