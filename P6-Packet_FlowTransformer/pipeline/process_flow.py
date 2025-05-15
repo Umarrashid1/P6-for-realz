@@ -277,7 +277,7 @@ if __name__ == "__main__":
     # You might want to make this configurable if you have separate mappings for packets and flows.
 
     TEST_MODE_FLAG = True  # Set to True for quick testing on fewer rows
-    ROWS_PER_FILE_LIMIT_IF_TEST = 1000  # Used only if TEST_MODE_FLAG is True
+    ROWS_PER_FILE_LIMIT_IF_TEST = 10000  # Used only if TEST_MODE_FLAG is True
 
     # --- Ensure necessary files/dirs exist ---
     if not os.path.isdir(FLOW_DATA_INPUT_DIR):

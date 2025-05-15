@@ -10,7 +10,7 @@ create_packet_sequences(
     dataset_dir=DATASET_DIR,
     output_file=str(OUTPUT_FILE),
     test_mode=True,
-    rows_per_file=1000,
+    rows_per_file=10000,
 )
 
 print("Pipeline completed successfully.")
