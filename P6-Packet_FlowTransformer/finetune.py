@@ -1,154 +1,204 @@
+# finetune.py
 import os
 import torch
 from torch.utils.data import random_split
-import json  # For loading the configuration file
-from pathlib import Path  # For path handling
-from pipeline.iot_flowdataset import IoTFlowDataset  # Assuming this path is correct
-from models.transformer import IoTTransformer  # Assuming this path is correct
-from models.flow_finetuning_model import FlowFineTuningModel  # Assuming this path is correct
-from train.train_flows import fine_tune_flow_model, test_flow_model  # Assuming this path is correct
-import logging  # Import logging module
-import sys  # For sys.exit
+import json
+from pathlib import Path
+import random
+import numpy as np
+import logging
 
-# --- Setup Logging ---
-# Determine the base directory of the script (P6-Packet_FlowTransformer)
-# This assumes the script is run from its location within P6-Packet_FlowTransformer
-# or that the CWD is P6-Packet_FlowTransformer as in the SLURM script.
-log_file_path = Path(os.getcwd()) / 'finetune_flow_model.log'
+# Project-specific imports
+from pipeline.iot_flowdataset import IoTFlowDataset
+from models.transformer import IoTTransformer  # Needed to reconstruct pre-trained model arch
+from models.flow_finetuning_model import FlowFineTuningModel
+from train.train_flows import fine_tune_flow_model, test_flow_model  # Assumes this is updated for logger
+from utils.category_mapping import load_mappings  # For packet cat_sizes if needed for IoTTransformer
+from pipeline.config import categorical_columns_packets, numerical_columns_packets  # For IoTTransformer instantiation
+
+# --- 0. Load Central Configuration, Set Up Logger, and Set Seeds ---
+CONFIG_FILE_PATH = Path("config.json")  # Adjust path if your config is elsewhere
+
+if not CONFIG_FILE_PATH.is_file():
+    print(f"❌ CRITICAL: Configuration file not found at {CONFIG_FILE_PATH}")
+    exit(1)
+
+with open(CONFIG_FILE_PATH, 'r') as f:
+    config = json.load(f)
+
+# --- Logging Setup ---
+log_paths_config = config.get('paths', {})
+LOG_FILE_NAME = log_paths_config.get('finetuned_model_log_file', 'training_finetuned_model.log')
+LOG_DIR = Path(log_paths_config.get('log_dir', 'logs'))
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE_PATH = LOG_DIR / LOG_FILE_NAME
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    filename=log_file_path,
-    filemode='w'  # Overwrite log file each time
+    format="%(asctime)s - %(levelname)s - [%(name)s:%(filename)s:%(lineno)d] - %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE_PATH),
+        logging.StreamHandler()
+    ]
 )
+logger = logging.getLogger(__name__)
+logger.info(f"✅ Central configuration loaded from {CONFIG_FILE_PATH}")
+
+# Apply Random Seed
+SEED = config['general_settings']['random_seed']
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+logger.info(f"🌱 Random seed set to: {SEED}")
 
 
-# If you also want to see logs on console (stderr) during interactive runs, uncomment next line:
-# logging.getLogger().addHandler(logging.StreamHandler(sys.stderr))
-
-
-# --- Helper Functions ---
-def split_dataset_three_ways(dataset, val_ratio=0.1, test_ratio=0.1):
+# --- Helper Functions (Modified to use logger) ---
+def split_dataset_three_ways(dataset, val_ratio=0.1, test_ratio=0.1, logger_instance=None):
+    if logger_instance is None:
+        logger_instance = logger
     total_size = len(dataset)
     val_size = int(total_size * val_ratio)
     test_size = int(total_size * test_ratio)
     train_size = total_size - val_size - test_size
+    if train_size < 0:
+        logger_instance.warning(
+            f"Dataset too small for specified ratios (Total: {total_size}, Val: {val_size}, Test: {test_size}). Adjusting splits.")
+        if total_size * (1 - val_ratio - test_ratio) <= 0:
+            train_size = max(1, int(total_size * 0.7))
+            val_size = max(1, int(total_size * 0.15))
+            test_size = total_size - train_size - val_size
+            if test_size < 0: test_size = 0
+        else:
+            train_size = total_size - val_size - test_size
+    logger_instance.info(f"Dataset split: Train={train_size}, Val={val_size}, Test={test_size}")
     return random_split(dataset, [train_size, val_size, test_size])
 
 
-def load_transformer_body_weights(target_model: FlowFineTuningModel, pretrained_checkpoint_path: str, device: str):
-    logging.info(f"🔄 Loading Transformer Body weights from: {pretrained_checkpoint_path}")  # Changed from print
+def load_transformer_body_weights(target_model: FlowFineTuningModel, pretrained_checkpoint_path: str, device: str,
+                                  logger_instance=None):
+    if logger_instance is None:
+        logger_instance = logger
+    logger_instance.info(f"🔄 Loading Transformer Body weights from: {pretrained_checkpoint_path}")
     try:
         pretrained_state_dict = torch.load(pretrained_checkpoint_path, map_location=device)
     except FileNotFoundError:
-        logging.error(f"❌ Error: Pretrained model file not found: {pretrained_checkpoint_path}")  # Changed from print
+        logger_instance.error(f"❌ Error: Pretrained model file not found: {pretrained_checkpoint_path}")
         return False
-    except Exception as e:  # Catch other potential torch.load errors
-        logging.error(f"❌ Error loading pretrained model file {pretrained_checkpoint_path}: {e}")
+    except Exception as e:
+        logger_instance.error(f"❌ Error loading pretrained model checkpoint: {e}", exc_info=True)
         return False
 
-    PRETRAINED_BODY_PREFIX = "transformer."  # In IoTTransformer state_dict
-    TARGET_BODY_PREFIX = "transformer_encoder_body."  # In FlowFineTuningModel
-
-    body_weights = {TARGET_BODY_PREFIX + k[len(PRETRAINED_BODY_PREFIX):]: v
-                    for k, v in pretrained_state_dict.items() if k.startswith(PRETRAINED_BODY_PREFIX)}
-
+    PRETRAINED_BODY_PREFIX = "transformer."
+    TARGET_BODY_PREFIX = "transformer_encoder_body."
+    body_weights = {
+        TARGET_BODY_PREFIX + k[len(PRETRAINED_BODY_PREFIX):]: v
+        for k, v in pretrained_state_dict.items() if k.startswith(PRETRAINED_BODY_PREFIX)
+    }
     if not body_weights:
-        logging.warning(
-            f"⚠️ No weights found with prefix '{PRETRAINED_BODY_PREFIX}' in checkpoint {pretrained_checkpoint_path}.")  # Changed from print to warning
-        # Depending on strictness, you might want to return False or allow continuation
-        # For now, assume it's a warning and continue to see load_state_dict output
-        # return False # Uncomment if this should be a fatal error
+        logger_instance.error(
+            f"❌ No weights found with prefix '{PRETRAINED_BODY_PREFIX}' in checkpoint {pretrained_checkpoint_path}.")
+        return False
 
     missing, unexpected = target_model.load_state_dict(body_weights, strict=False)
-    logging.info(f"✅ Loaded {len(body_weights)} layers into '{TARGET_BODY_PREFIX}'.")  # Changed from print
-    if missing: logging.info(
-        f"   ℹ️ Missing in target: {len(missing)} (expected for new layers, e.g.: {missing[:3]}...)")  # Changed from print
+    logger_instance.info(f"✅ Loaded {len(body_weights)} parameter groups into '{TARGET_BODY_PREFIX}'.")
+    if missing:
+        # Filter out missing keys that are NOT part of the target_body_prefix (e.g. classifier of FlowFineTuningModel)
+        genuinely_missing_in_body = [k for k in missing if k.startswith(TARGET_BODY_PREFIX)]
+        if genuinely_missing_in_body:
+            logger_instance.warning(
+                f"   ⚠️ Missing in target transformer_encoder_body: {len(genuinely_missing_in_body)} keys (e.g., {genuinely_missing_in_body[:3]}...). This might be an issue.")
+        # Log other missing keys if necessary, but they are expected (new flow layers, new classifier)
+        # logger_instance.info(f"   ℹ️ Other missing keys (expected for new layers): {[k for k in missing if not k.startswith(TARGET_BODY_PREFIX)][:3]}...")
     if unexpected:
-        logging.error(
-            f"   ❌ Unexpected in source checkpoint: {len(unexpected)} (e.g.: {unexpected[:3]}...) Check prefixes and model structure.")  # Changed from print
-        return False  # Treat unexpected weights in the source as an error
+        logger_instance.error(
+            f"   ❌ Unexpected keys in source checkpoint (should be 0 if loading only body): {len(unexpected)} (e.g., {unexpected[:3]}...).")
+        return False  # This typically indicates an issue with the source checkpoint or prefixes
     return True
 
 
-def freeze_transformer_body(model: FlowFineTuningModel):
+def freeze_transformer_body(model: FlowFineTuningModel, logger_instance=None):
+    if logger_instance is None:
+        logger_instance = logger
     TARGET_BODY_PREFIX = "transformer_encoder_body."
     frz_c = 0
-    total_params_in_body = 0
+    total_params_body = 0
     for name, param in model.named_parameters():
         if name.startswith(TARGET_BODY_PREFIX):
             param.requires_grad = False
             frz_c += 1
-            total_params_in_body += param.numel()
-        else:
-            param.requires_grad = True  # Ensure other parts are trainable
-
-    if total_params_in_body > 0 and frz_c > 0:  # Check if the body actually had parameters
-        logging.info(
-            f"🧊 Frozen {frz_c} param groups in '{TARGET_BODY_PREFIX}'. Others trainable.")  # Changed from print
-    elif total_params_in_body == 0:
-        logging.warning(
-            f"   ⚠️ No parameters found with prefix '{TARGET_BODY_PREFIX}'. Nothing was frozen. Check model structure.")
-    else:  # frz_c == 0 but total_params_in_body > 0 (should not happen if prefix is correct)
-        logging.warning(
-            f"   ⚠️ No parameters were frozen with prefix '{TARGET_BODY_PREFIX}', though parameters exist there. All are trainable. Check freezing logic.")
+            total_params_body += param.numel()
+    logger_instance.info(
+        f"🧊 Frozen {frz_c} parameter groups ({total_params_body:,} params) in '{TARGET_BODY_PREFIX}'. Other layers are trainable.")
+    if frz_c == 0 and sum(
+            p.numel() for p in model.parameters() if p.requires_grad and name.startswith(TARGET_BODY_PREFIX)) > 0:
+        logger_instance.warning(
+            f"   ⚠️ No parameters were actually frozen with prefix '{TARGET_BODY_PREFIX}', but body has params. Check model structure or prefix.")
+    elif total_params_body == 0:
+        logger_instance.warning(f"   ⚠️ Transformer body '{TARGET_BODY_PREFIX}' seems to have no parameters to freeze.")
 
 
-# --- Configuration & Parameters ---
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# --- Configuration & Parameters from Loaded Config ---
+logger.info(f"--- Initializing Fine-tuning Script (Using Central Config) ---")
 
-# Paths - Using Path objects for robustness
-# Assuming the script is run from P6-Packet_FlowTransformer directory
-BASE_DIR = Path(
-    os.getcwd())  # Or explicitly Path(__file__).resolve().parent if script location is fixed relative to data
-FLOW_DATASET_PATH = BASE_DIR / "../../../dataset/processed_flows.pt"  # Adjust if CWD is different
-PACKET_MODEL_CHECKPOINT_DIR = BASE_DIR / "checkpoints_packet_model"
-PRETRAINED_PACKET_MODEL_WEIGHTS = PACKET_MODEL_CHECKPOINT_DIR / "model_best.pt"
-PACKET_MODEL_CONFIG_PATH = PACKET_MODEL_CHECKPOINT_DIR / "packet_config.json"
-FINETUNED_MODEL_SAVE_DIR = BASE_DIR / "checkpoints_flow_finetuned_vMain"  # Will be created by train_flows
+# General Settings
+DEVICE_str = config['general_settings']['device']
+if DEVICE_str == "cuda" and not torch.cuda.is_available():
+    logger.warning("⚠️ CUDA specified in config but not available. Falling back to CPU.")
+    DEVICE = "cpu"
+else:
+    DEVICE = DEVICE_str
+NUM_WORKERS_LOADER = config['general_settings']['num_workers_loader']
+
+# Paths
+paths_cfg = config['paths']
+FLOW_DATASET_PATH = Path(config['dataset_paths']['processed_flow_pt'])
+# Construct path to the best pre-trained packet model
+PRETRAINED_PACKET_MODEL_WEIGHTS = Path(paths_cfg['packet_model_save_dir']) / "model_best.pt"
+FINETUNED_MODEL_SAVE_DIR = Path(paths_cfg['finetuned_model_save_dir'])
+FINETUNED_MODEL_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+
+logger.info(f"Device: {DEVICE}, Num Workers: {NUM_WORKERS_LOADER}")
+logger.info(f"Flow Dataset: {FLOW_DATASET_PATH}")
+logger.info(f"Pretrained Packet Model Weights: {PRETRAINED_PACKET_MODEL_WEIGHTS}")
+logger.info(f"Fine-tuned Model Save Dir: {FINETUNED_MODEL_SAVE_DIR}")
+logger.info(f"Log file: {LOG_FILE_PATH}")
+
+# Model Architecture Parameters (from central config)
+model_arch_cfg = config['model_architecture']
+transformer_body_cfg = model_arch_cfg['transformer_body']
+D_MODEL_PRETRAINED = transformer_body_cfg['d_model']
+NUM_LAYERS_PRETRAINED = transformer_body_cfg['num_layers']
+NUM_HEADS_PRETRAINED = transformer_body_cfg['num_heads']
+DROPOUT_PRETRAINED = transformer_body_cfg['dropout']
+CLASSIFIER_DROPOUT_CFG = model_arch_cfg.get('classifier_dropout_flow',
+                                            DROPOUT_PRETRAINED)  # Flow specific classifier dropout
+
+# Packet model specific architecture details needed for reconstructing IoTTransformer
+INPUT_DIM_NUMERICAL_PACKET = model_arch_cfg.get('input_dim_packet_numerical', len(numerical_columns_packets))
+MAX_SEQ_LEN_PACKET = model_arch_cfg['max_seq_len_packet']
+NUM_CLASSES_PACKET_PRETRAIN = model_arch_cfg['num_classes_packet']  # Num classes of pretrain task
+
+# Flow specific parameters
+NUM_CLASSES_FLOW = model_arch_cfg['num_classes_flow']
 
 # Fine-tuning Hyperparameters
-NUM_CLASSES_FLOW = 8
-EPOCHS_FINETUNE = 10
-LR_FINETUNE = 5e-5
-BATCH_SIZE_FLOW = 64
+finetune_params_cfg = config['training_params']['fine_tuning_flow']
+EPOCHS_FINETUNE = finetune_params_cfg['epochs']
+LR_FINETUNE = finetune_params_cfg['lr']
+BATCH_SIZE_FLOW = finetune_params_cfg['batch_size']
+CLIP_GRAD_CFG = finetune_params_cfg.get('clip_grad', 1.0)
+USE_WEIGHTED_SAMPLER_CFG = finetune_params_cfg.get('use_weighted_sampler', False)
 
-logging.info("--- Fine-tuning Setup ---")  # Changed from print
-logging.info(f"Device: {DEVICE}")  # Changed from print
-logging.info(f"Flow Dataset: {FLOW_DATASET_PATH.resolve()}")  # Changed from print, resolve for absolute path
-logging.info(f"Pretrained Packet Model Weights: {PRETRAINED_PACKET_MODEL_WEIGHTS.resolve()}")  # Changed from print
-logging.info(f"Pretrained Packet Model Config: {PACKET_MODEL_CONFIG_PATH.resolve()}")  # Changed from print
+logger.info(
+    f"Pretrained Transformer Body Params: d_model={D_MODEL_PRETRAINED}, layers={NUM_LAYERS_PRETRAINED}, heads={NUM_HEADS_PRETRAINED}")
+logger.info(f"Fine-tuning Params: Epochs={EPOCHS_FINETUNE}, LR={LR_FINETUNE}, BatchSize={BATCH_SIZE_FLOW}")
 
-# --- 1. Load Packet Model Configuration ---
-logging.info(
-    f"\n1. Loading original packet model configuration from: {PACKET_MODEL_CONFIG_PATH.resolve()}")  # Changed from print
+# --- 1. Load Flow Dataset and its characteristics ---
+logger.info(f"1. Loading flow dataset characteristics from: {FLOW_DATASET_PATH}")
 try:
-    with open(PACKET_MODEL_CONFIG_PATH, 'r') as f:
-        packet_model_arch_params = json.load(f)
-    logging.info("   ✅ Packet model configuration loaded.")  # Changed from print
-    D_MODEL_PRETRAINED = packet_model_arch_params['embed_dim']
-    NUM_LAYERS_PRETRAINED = packet_model_arch_params['num_layers']
-    NUM_HEADS_PRETRAINED = packet_model_arch_params['num_heads']
-    DROPOUT_PRETRAINED = packet_model_arch_params.get('dropout', 0.1)
-except FileNotFoundError:
-    logging.error(
-        f"❌ Error: Packet model config file not found: {PACKET_MODEL_CONFIG_PATH.resolve()}")  # Changed from print
-    sys.exit(1)  # Changed from exit(1)
-except KeyError as e:
-    logging.error(
-        f"❌ Error: Missing key {e} in packet model config file {PACKET_MODEL_CONFIG_PATH.resolve()}.")  # Changed from print
-    sys.exit(1)  # Changed from exit(1)
-except Exception as e:  # Catch other potential JSON errors
-    logging.error(f"❌ Error loading packet model config {PACKET_MODEL_CONFIG_PATH.resolve()}: {e}")
-    sys.exit(1)
-
-# --- 2. Load Flow Dataset and its characteristics ---
-logging.info(f"\n2. Loading flow dataset characteristics from: {FLOW_DATASET_PATH.resolve()}")  # Changed from print
-try:
-    if not FLOW_DATASET_PATH.exists():
-        logging.error(f"❌ Error: Flow data file not found: {FLOW_DATASET_PATH.resolve()}")
-        sys.exit(1)
     flow_data_pt = torch.load(FLOW_DATASET_PATH, map_location='cpu')
     num_flow_numerical_f = flow_data_pt['numerical_features'].shape[1]
     flow_cat_tensor = flow_data_pt['categorical_features']
@@ -156,85 +206,109 @@ try:
     flow_cat_cardinalities = []
     if num_flow_categorical_f > 0:
         for i in range(num_flow_categorical_f):
-            flow_cat_cardinalities.append(int(torch.max(flow_cat_tensor[:, i])) + 1)
-    logging.info(
-        f"   Flow data: NumNumerical={num_flow_numerical_f}, NumCategorical={num_flow_categorical_f}, CatCardinalities={flow_cat_cardinalities}")  # Changed from print
-except KeyError as e:
-    logging.error(
-        f"❌ Error: Missing key {e} in flow data .pt file ({FLOW_DATASET_PATH.resolve()}).")  # Changed from print
-    sys.exit(1)  # Changed from exit(1)
-except Exception as e:  # Catch other potential torch.load or access errors
-    logging.error(f"❌ Error loading flow data {FLOW_DATASET_PATH.resolve()}: {e}")
-    sys.exit(1)
+            if flow_cat_tensor[:, i].numel() > 0:
+                flow_cat_cardinalities.append(int(torch.max(flow_cat_tensor[:, i])) + 1)
+            else:
+                flow_cat_cardinalities.append(1)  # Default for empty categorical column
+    logger.info(
+        f"   Flow data: NumNumerical={num_flow_numerical_f}, NumCategorical={num_flow_categorical_f}, CatCardinalities={flow_cat_cardinalities}")
+    del flow_data_pt
+except Exception as e:
+    logger.error(f"❌ Error loading flow data characteristics: {e}", exc_info=True)
+    exit(1)
 
-full_flow_dataset = IoTFlowDataset(pt_file_path=str(FLOW_DATASET_PATH))  # IoTFlowDataset might expect string path
+full_flow_dataset = IoTFlowDataset(pt_file_path=FLOW_DATASET_PATH)
 
-# --- 3. Prepare the FlowFineTuningModel ---
-logging.info("\n3. Preparing model for fine-tuning...")  # Changed from print
+# --- 2. Prepare the FlowFineTuningModel ---
+logger.info("2. Preparing model for fine-tuning...")
 try:
+    # Step 2a: Instantiate original packet model structure to extract its encoder body
+    # This needs the categorical sizes for packet data
+    cat_map_packet_path = config.get('paths', {}).get('category_mappings_packet', 'category_mappings_packets.json')
+    logger.info(f"   Loading packet category mappings from: {cat_map_packet_path} for temp IoTTransformer")
+    cat_map_packets = load_mappings(path=cat_map_packet_path, is_flow=False)
+    cat_sizes_packets = {col: len(cat_map_packets[col]) for col in categorical_columns_packets if
+                         col in cat_map_packets}
+    cat_pad_packets = {c: cat_map_packets[c]["unknown"] for c in categorical_columns_packets if
+                       c in cat_map_packets and "unknown" in cat_map_packets[c]}
+    # Ensure all necessary packet categorical columns are present
+    for col in categorical_columns_packets:
+        if col not in cat_sizes_packets:
+            logger.warning(
+                f"Packet category '{col}' not in mappings. Defaulting size to 1, padding_idx to 0 for temp IoTTransformer.")
+            cat_sizes_packets[col] = 1
+            cat_pad_packets[col] = 0
+        elif "unknown" not in cat_map_packets[col] and col in cat_pad_packets:  # Check if unknown was added
+            logger.warning(
+                f"Unknown category not found for packet col '{col}'. Defaulting padding_idx to 0 for temp IoTTransformer.")
+            cat_pad_packets[col] = 0
+
     temp_packet_model_args = {
-        'input_dim': packet_model_arch_params['input_dim'],
-        'cat_sizes': packet_model_arch_params['cat_sizes'],
-        'cat_padding_idx': packet_model_arch_params['cat_padding_idx'],
+        'input_dim': INPUT_DIM_NUMERICAL_PACKET,  # Num numerical features for packets
+        'cat_sizes': cat_sizes_packets,  # Cat sizes for packet features
+        'cat_padding_idx': cat_pad_packets,  # Cat padding for packet features
         'embed_dim': D_MODEL_PRETRAINED,
         'num_heads': NUM_HEADS_PRETRAINED,
         'num_layers': NUM_LAYERS_PRETRAINED,
         'dropout': DROPOUT_PRETRAINED,
-        'num_classes': packet_model_arch_params['num_classes'],
-        'max_seq_len': packet_model_arch_params['max_seq_len']
+        'num_classes': NUM_CLASSES_PACKET_PRETRAIN,  # From pretrain task
+        'max_seq_len': MAX_SEQ_LEN_PACKET
     }
     original_packet_model_for_body = IoTTransformer(**temp_packet_model_args)
 
     if not hasattr(original_packet_model_for_body, 'transformer'):
-        logging.error(
-            "Original IoTTransformer class needs 'transformer' attribute for its nn.TransformerEncoder.")  # Changed from print + raise
-        sys.exit(1)  # Changed from raise
+        logger.error("Original IoTTransformer class needs 'transformer' attribute (the nn.TransformerEncoder).")
+        raise AttributeError(
+            "Original IoTTransformer class needs 'transformer' attribute for its nn.TransformerEncoder.")
+
     pretrained_transformer_body = original_packet_model_for_body.transformer
-    logging.info("   ✅ Transformer body extracted from packet model structure.")  # Changed from print
+    logger.info("   ✅ Pretrained Transformer encoder body structure extracted from IoTTransformer.")
+
+    # Step 2b: Instantiate the FlowFineTuningModel
+    flow_finetuning_model_instance = FlowFineTuningModel(
+        num_flow_numerical_features=num_flow_numerical_f,
+        flow_cat_cardinalities=flow_cat_cardinalities,
+        d_model=D_MODEL_PRETRAINED,  # This d_model is for flow feature projections AND the encoder
+        pretrained_transformer_encoder_body=pretrained_transformer_body,
+        num_classes=NUM_CLASSES_FLOW,
+        classifier_dropout=CLASSIFIER_DROPOUT_CFG
+    )
+    flow_finetuning_model_instance.to(DEVICE)
+    logger.info("   ✅ FlowFineTuningModel instantiated.")
+
+    # Step 2c: Load pre-trained weights into the body and freeze it
+    if not PRETRAINED_PACKET_MODEL_WEIGHTS.is_file():
+        logger.error(
+            f"❌ Pretrained packet model weights not found at {PRETRAINED_PACKET_MODEL_WEIGHTS}. Cannot proceed with fine-tuning.")
+        exit(1)
+
+    if not load_transformer_body_weights(flow_finetuning_model_instance, str(PRETRAINED_PACKET_MODEL_WEIGHTS), DEVICE,
+                                         logger_instance=logger):
+        logger.error("❌ Failed to load pre-trained weights into the transformer body.")
+        exit(1)
+    freeze_transformer_body(flow_finetuning_model_instance, logger_instance=logger)
+
 except Exception as e:
-    logging.error(
-        f"❌ Error instantiating temporary packet model from loaded config: {type(e).__name__} - {e}")  # Changed from print
-    import traceback
+    logger.error(f"❌ Error during model preparation: {e}", exc_info=True)
+    exit(1)
 
-    logging.error(traceback.format_exc())  # Log full traceback for this complex step
-    sys.exit(1)  # Changed from exit(1)
+# --- 3. Split flow dataset ---
+logger.info("3. Splitting flow dataset...")
+dataset_params_cfg = config.get('dataset_params', {})
+val_ratio = dataset_params_cfg.get('val_ratio_flow', 0.1)  # Flow specific ratios
+test_ratio = dataset_params_cfg.get('test_ratio_flow', 0.1)
 
-flow_finetuning_model_instance = FlowFineTuningModel(
-    num_flow_numerical_features=num_flow_numerical_f,
-    flow_cat_cardinalities=flow_cat_cardinalities,
-    d_model=D_MODEL_PRETRAINED,
-    num_classes=NUM_CLASSES_FLOW,
-    classifier_dropout=0.1,
-    pretrained_transformer_encoder_body=pretrained_transformer_body
+train_flow_dataset, val_flow_dataset, test_flow_dataset = split_dataset_three_ways(
+    full_flow_dataset,
+    val_ratio=val_ratio,
+    test_ratio=test_ratio,
+    logger_instance=logger
 )
-flow_finetuning_model_instance.to(DEVICE)
-logging.info("   ✅ FlowFineTuningModel instantiated.")  # Changed from print
 
-if not load_transformer_body_weights(flow_finetuning_model_instance, str(PRETRAINED_PACKET_MODEL_WEIGHTS), DEVICE):
-    logging.error("Halting due to issues in loading transformer body weights.")
-    sys.exit(1)  # Changed from exit(1)
-freeze_transformer_body(flow_finetuning_model_instance)
-
-# --- 4. Split flow dataset ---
-logging.info("\n4. Splitting flow dataset...")  # Changed from print
+# --- 4. Fine-tune the model ---
+logger.info("4. Starting Fine-tuning on Flow Data...")
 try:
-    train_flow_dataset, val_flow_dataset, test_flow_dataset = split_dataset_three_ways(full_flow_dataset)
-    if len(train_flow_dataset) == 0 or len(val_flow_dataset) == 0:
-        logging.error("Training or Validation dataset is empty after split.")  # Changed from print + raise
-        sys.exit(1)  # Changed from raise
-    logging.info(
-        f"   Train: {len(train_flow_dataset)}, Val: {len(val_flow_dataset)}, Test: {len(test_flow_dataset)}")  # Changed from print
-except ValueError as e:
-    logging.error(f"Error during dataset split: {e}")  # Changed from print
-    sys.exit(1)  # Changed from exit(1)
-except Exception as e:  # Catch any other split errors
-    logging.error(f"Unexpected error during dataset split: {e}")
-    sys.exit(1)
-
-# --- 5. Fine-tune the model ---
-logging.info("\n5. Starting Fine-tuning on Flow Data...")  # Changed from print
-try:
-    fine_tune_flow_model(
+    fine_tune_flow_model(  # Assuming train_flows.py is updated for logger
         model=flow_finetuning_model_instance,
         train_dataset=train_flow_dataset,
         val_dataset=val_flow_dataset,
@@ -242,33 +316,39 @@ try:
         batch_size=BATCH_SIZE_FLOW,
         lr=LR_FINETUNE,
         device=DEVICE,
-        save_dir=str(FINETUNED_MODEL_SAVE_DIR),  # Ensure save_dir is a string
-        clip_grad=1.0,
-        use_weighted_sampler=False
+        save_dir=str(FINETUNED_MODEL_SAVE_DIR),
+        clip_grad=CLIP_GRAD_CFG,
+        use_weighted_sampler=USE_WEIGHTED_SAMPLER_CFG,
+        num_workers_loader=NUM_WORKERS_LOADER,
+        logger=logger  # Pass the logger
     )
+    logger.info("   ✅ Model fine-tuning completed.")
 except Exception as e:
-    logging.error(f"❌ Error during fine_tune_flow_model: {type(e).__name__} - {e}")
-    import traceback
+    logger.error(f"❌ Error during model fine-tuning: {e}", exc_info=True)
+    exit(1)
 
-    logging.error(traceback.format_exc())
-    sys.exit(1)
-
-# --- 6. Final Test ---
-logging.info("\n6. Testing Fine-tuned Flow Model...")  # Changed from print
-best_model_path = FINETUNED_MODEL_SAVE_DIR / "model_flow_best.pt"  # Path object
+# --- 5. Final Test ---
+logger.info("5. Testing Fine-tuned Flow Model...")
 try:
-    test_flow_model(
+    best_model_path = FINETUNED_MODEL_SAVE_DIR / "model_flow_best.pt"
+    if not best_model_path.exists():
+        logger.warning(
+            f"Best fine-tuned model checkpoint not found at {best_model_path}. Testing with current model state.")
+        model_path_to_test = None
+    else:
+        model_path_to_test = str(best_model_path)
+
+    test_flow_model(  # Assuming train_flows.py is updated for logger
         model=flow_finetuning_model_instance,
         test_dataset=test_flow_dataset,
-        batch_size=BATCH_SIZE_FLOW,
+        batch_size=BATCH_SIZE_FLOW,  # Or a specific test_batch_size from config
         device=DEVICE,
-        model_path=str(best_model_path) if best_model_path.exists() else None  # Ensure model_path is string or None
+        model_path=model_path_to_test,
+        logger=logger  # Pass the logger
     )
+    logger.info("   ✅ Fine-tuned model testing completed.")
 except Exception as e:
-    logging.error(f"❌ Error during test_flow_model: {type(e).__name__} - {e}")
-    import traceback
+    logger.error(f"❌ Error during fine-tuned model testing: {e}", exc_info=True)
+    exit(1)
 
-    logging.error(traceback.format_exc())
-    sys.exit(1)
-
-logging.info("\n🏁 pretrain.py fine-tuning script finished. 🏁")  # Changed from print
+logger.info("🏁 Fine-tuning script (with central config & logging) finished. 🏁")
