@@ -1,7 +1,7 @@
 {
   "dataset_paths": {
     "raw_packet_dir": "../../../dataset/raw_dataset",
-    "processed_packet_pt": "../../../dataset/packet_small.pt",
+    "processed_packet_pt": "../../../dataset/packet_full.pt",
     "raw_flow_dir": "../../../dataset/roni/DatasetFlow",
     "processed_flow_pt": "../../../dataset/processed_flows.pt"
   },
