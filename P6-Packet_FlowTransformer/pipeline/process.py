@@ -21,11 +21,10 @@ LOG_FILE = f"preprocessing_{timestamp}.log"  # This file will be created by this
 logging.basicConfig(  # This script will configure its own logging
     filename=LOG_FILE,
     filemode="w",
-    level=logging.INFO,  # Default level, can be changed if needed
+    level=logging.DEBUG,  # Changed from INFO to DEBUG
     format="%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d - %(message)s",  # Added filename and lineno
 )
 # All logging calls will now use the root logger configured by basicConfig above
-# No need for module_logger = logging.getLogger(__name__) if basicConfig is used here.
 
 # ── Create a timestamped checkpoint directory ──────────────────────────────
 CHECKPOINT_DIR_BASE = Path("checkpoints")
@@ -134,7 +133,6 @@ def process_fragment(args: Tuple[pd.DataFrame, str, int, Path]) -> Tuple[
             logging.error(f"[{Path(file_path).name}] Error mapping column {col}: {e}. Filling with unknown_id.")
             df[col] = unknown_id
 
-        # Use logging.debug for potentially very verbose logs
         logging.debug(
             f"[{Path(file_path).name}] Mapped column {col} in {time.time() - col_map_time_start:.4f}s. Unique values after map: {df[col].nunique() if not df.empty else 'N/A'}")
 
@@ -147,7 +145,7 @@ def process_fragment(args: Tuple[pd.DataFrame, str, int, Path]) -> Tuple[
         logging.error(f"[{Path(file_path).name}] Error during groupby('stream'): {e}. Skipping sequence generation.")
         return file_path, [], [], [], {}
 
-    num_groups = len(packet_groups) if hasattr(packet_groups, '__len__') else packet_groups.ngroups  # Get group count
+    num_groups = len(packet_groups) if hasattr(packet_groups, '__len__') else packet_groups.ngroups
     logging.info(
         f"[{Path(file_path).name}] Grouped by 'stream' in {time.time() - group_time_start:.2f}s. Number of groups: {num_groups}")
 
@@ -186,7 +184,6 @@ def process_fragment(args: Tuple[pd.DataFrame, str, int, Path]) -> Tuple[
                 unknown_id_for_padding = col_mapping.get("unknown", 0)
 
                 cat_original_slice = cat_feat_for_stream.get(col_name, np.array([]))[start_idx:end_idx]
-                # Ensure cat_original_slice is 1D before padding
                 if cat_original_slice.ndim > 1: cat_original_slice = cat_original_slice.flatten()
 
                 padded_cat_slice = np.pad(cat_original_slice, (0, max_seq_len - len(cat_original_slice)),
@@ -245,7 +242,7 @@ def create_packet_sequences(
         rows_per_file: int = 0,
         max_seq_len: int = 64,
 ):
-    global timestamp  # Use the global timestamp for this run
+    global timestamp
     current_checkpoint_dir = CHECKPOINT_DIR_BASE / timestamp
     current_checkpoint_dir.mkdir(parents=True, exist_ok=True)
     logging.info(f"Using checkpoint directory for this run: {current_checkpoint_dir}")
@@ -289,7 +286,7 @@ def create_packet_sequences(
                 file_name = futures_load[future]
                 try:
                     result = future.result()
-                    if result is not None and result[0] is not None:  # Check if df is not None
+                    if result is not None and result[0] is not None:
                         loaded_dfs_with_paths.append(result)
                         logging.info(
                             f"Loaded file {i + 1}/{len(pending_files)}: {file_name} (Shape: {result[0].shape})")
