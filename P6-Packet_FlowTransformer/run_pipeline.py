@@ -4,7 +4,7 @@ t0 = time.time()
 
 
 DATASET_DIR = '../../../dataset/raw_dataset'
-OUTPUT_FILE = '../../../dataset/packet_full.pt'
+OUTPUT_FILE = '../../../dataset/packet_full_test.pt'
 
 create_packet_sequences(
     dataset_dir=DATASET_DIR,
