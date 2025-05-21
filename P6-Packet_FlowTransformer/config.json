@@ -1,7 +1,7 @@
 {
   "dataset_paths": {
     "raw_packet_dir": "../../../dataset/raw_dataset",
-    "processed_packet_pt": "../../../dataset/packet_full.pt",
+    "processed_packet_pt": "../../../dataset/packet_small.pt",
     "raw_flow_dir": "../../../dataset/roni/DatasetFlow",
     "processed_flow_pt": "../../../dataset/processed_flows.pt"
   },
@@ -60,5 +60,8 @@
      "test_ratio_packet": 0.1,
      "val_ratio_flow": 0.1,
      "test_ratio_flow": 0.1
-  }
+  },
+  "optuna_params": {
+  "n_trials_pretrain": 50
+}
 }
