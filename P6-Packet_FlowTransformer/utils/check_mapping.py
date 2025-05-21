@@ -1,6 +1,6 @@
 import json
 
-mapping_path = "category_mappings.json"  # Adjust if needed
+mapping_path = "category_mappings_packets.json"  # Adjust if needed
 
 with open(mapping_path, "r") as f:
     mappings = json.load(f)
