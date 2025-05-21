@@ -16,7 +16,7 @@ from sklearn.utils.class_weight import compute_class_weight
 
 # --- Project-specific Imports ---
 from pipeline.iot_dataset import IoTSequenceDataset
-from models.transformer import IoTTransformer
+from models.packet_pretraining_model import PacketPretrainingModel
 from utils.category_mapping import load_mappings
 from pipeline.config import categorical_columns_packets, numerical_columns_packets, LABEL_MAPPING
 from train.train import _balanced_loss
@@ -146,7 +146,7 @@ def objective_pretrain(trial: optuna.trial.Trial):
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
 
-    model = IoTTransformer(
+    model = PacketPretrainingModel(
         input_dim=INPUT_DIM_NUMERICAL_PACKET_CONFIG,
         cat_sizes=CAT_SIZES_PACKETS,
         cat_padding_idx=CAT_PAD_PACKETS,
