@@ -10,7 +10,7 @@ import logging
 
 # Project-specific imports
 from pipeline.iot_flowdataset import IoTFlowDataset
-from models.transformer import IoTTransformer  # Needed to reconstruct pre-trained model arch
+from models.packet_pretraining_model import PacketPretrainingModel  # Needed to reconstruct pre-trained model arch
 from models.flow_finetuning_model import FlowFineTuningModel
 from train.train_flows import fine_tune_flow_model, test_flow_model  # Assumes this is updated for logger
 from utils.category_mapping import load_mappings  # For packet cat_sizes if needed for IoTTransformer
@@ -254,7 +254,7 @@ try:
         'num_classes': NUM_CLASSES_PACKET_PRETRAIN,  # From pretrain task
         'max_seq_len': MAX_SEQ_LEN_PACKET
     }
-    original_packet_model_for_body = IoTTransformer(**temp_packet_model_args)
+    original_packet_model_for_body = PacketPretrainingModel(**temp_packet_model_args)
 
     if not hasattr(original_packet_model_for_body, 'transformer'):
         logger.error("Original IoTTransformer class needs 'transformer' attribute (the nn.TransformerEncoder).")

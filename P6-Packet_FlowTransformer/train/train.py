@@ -157,7 +157,7 @@ def _balanced_loss(train_ds, device, logger: Optional[logging.Logger] = None) ->
 # Core API (Updated)
 # ────────────────────────────────────────────────────────────────────────────────
 
-# Modified to accept logger and num_workers
+# Modified to accept logger, num_workers, and patience for early stopping
 def train_model(
         model: nn.Module,
         train_dataset,
@@ -171,26 +171,30 @@ def train_model(
         clip_grad: float = 1.0,
         use_weighted_sampler: bool = False,
         save_dir: str = "checkpoints",
-        logger: Optional[logging.Logger] = None,  # <<<< NEW
-        num_workers: int = 0  # <<<< NEW
+        logger: Optional[logging.Logger] = None,
+        num_workers: int = 0,
+        patience: int = 5  # New parameter for early stopping
 ):
     if logger is None:
         logger = module_logger
 
     os.makedirs(save_dir, exist_ok=True)
-    logger.info(f"Starting training for {epochs} epochs on device '{device}'...")
+    logger.info(f"Starting training for up to {epochs} epochs on device '{device}'...") # Modified log
+    logger.info(f"Early stopping patience: {patience} epochs.") # New log
     logger.info(f"Saving checkpoints to '{save_dir}'")
     logger.info(f"Using {num_workers} workers for DataLoaders.")
 
     model.to(device)
     optimizer = optim.AdamW(model.parameters(), lr=lr)
-    criterion = _balanced_loss(train_dataset, device, logger=logger)  # Pass logger
+    criterion = _balanced_loss(train_dataset, device, logger=logger)
     train_loader, val_loader = _build_loaders(
         train_dataset, val_dataset, batch_size, use_weighted_sampler,
-        num_workers=num_workers, logger=logger  # Pass num_workers and logger
+        num_workers=num_workers, logger=logger
     )
 
     best_val_f1 = -1.0
+    epochs_no_improve = 0  # New: Counter for epochs without improvement
+    best_epoch = 0 # New: Track the epoch of the best model
 
     for epoch in range(1, epochs + 1):
         model.train()
@@ -204,7 +208,6 @@ def train_model(
                 packet_seq = batch["packet_seq"].to(device)
                 attention_mask = batch["attention_mask"].to(device)
                 labels = batch["label"].to(device)
-                # Dynamically get categorical features based on provided list
                 cat_feats = {c: batch[c].to(device) for c in categorical_columns if c in batch}
             except KeyError as e:
                 logger.error(f"❌ Batch missing expected key: {e}. Check your IoTSequenceDataset __getitem__.",
@@ -214,7 +217,7 @@ def train_model(
             if batch_idx == 0 and epoch == 1:
                 abs_max = float(packet_seq.abs().max())
                 logger.info(f"  Initial Batch 0: packet_seq abs‑max = {abs_max:.3e}")
-                if abs_max > 1e3:  # Reduced from 1e4 for packet data based on original script's diagnostics
+                if abs_max > 1e3:
                     logger.warning("  ⚠️ Features extremely large — check standardisation stats")
 
             if not torch.isfinite(packet_seq).all():
@@ -226,7 +229,7 @@ def train_model(
 
             bad_cat_cols = []
             for c, t in cat_feats.items():
-                if not torch.isfinite(t.float()).all():  # Cast to float for check if int tensor
+                if not torch.isfinite(t.float()).all():
                     bad_cat_cols.append(c)
             if bad_cat_cols:
                 logger.warning(
@@ -260,10 +263,10 @@ def train_model(
 
         model.eval()
         val_preds_list, val_labels_list = [], []
-        nan_batches_val = 0  # Added for consistency
+        nan_batches_val = 0
         with torch.no_grad():
             for batch in val_loader:
-                try:  # Added try-except for robustness during validation loading
+                try:
                     packet_seq = batch["packet_seq"].to(device)
                     attention_mask = batch["attention_mask"].to(device)
                     labels = batch["label"].to(device)
@@ -272,14 +275,13 @@ def train_model(
                     logger.error(f"❌ Validation Batch missing expected key: {e}.", exc_info=True)
                     continue
 
-                # Added NaN check for validation inputs
                 if not torch.isfinite(packet_seq).all():
                     nan_batches_val += 1
                     logger.warning(f"  ❌ Epoch {epoch:02d} NaN/Inf packet_seq in validation. Skipping batch.")
                     continue
 
                 logits = model(packet_seq, cat_feats, attention_mask=attention_mask)
-                if not torch.isfinite(logits).all():  # Check logits for NaNs
+                if not torch.isfinite(logits).all():
                     nan_batches_val += 1
                     logger.warning(f"  ❌ Epoch {epoch:02d} NaN/Inf logits in validation. Skipping batch.")
                     continue
@@ -287,7 +289,7 @@ def train_model(
                 val_preds_list.extend(logits.argmax(dim=1).cpu().tolist())
                 val_labels_list.extend(labels.cpu().tolist())
 
-        if not val_labels_list:  # Handle empty validation results
+        if not val_labels_list:
             logger.warning(f"No validation predictions made for epoch {epoch}. Skipping validation metrics.")
             val_accuracy, macro_f1, weighted_f1 = 0.0, 0.0, 0.0
         else:
@@ -305,18 +307,28 @@ def train_model(
             f"NaN Batches (Trn/Val): {nan_batches_train}/{nan_batches_val}"
         )
 
-        epoch_save_path = os.path.join(save_dir, f"model_ep{epoch}.pt")
-        torch.save(model.state_dict(), epoch_save_path)  # Save epoch checkpoint
+        # No longer save every epoch checkpoint by default, only best.
+        # epoch_save_path = os.path.join(save_dir, f"model_ep{epoch}.pt")
+        # torch.save(model.state_dict(), epoch_save_path)
 
         if macro_f1 > best_val_f1:
             best_val_f1 = macro_f1
+            best_epoch = epoch # New: Save best epoch
             best_save_path = os.path.join(save_dir, "model_best.pt")
             torch.save(model.state_dict(), best_save_path)
-            logger.info(f"  -> New best validation Macro-F1: {best_val_f1:.4f}. Saved to '{best_save_path}'")
+            logger.info(f"  -> New best validation Macro-F1: {best_val_f1:.4f} at epoch {best_epoch}. Saved to '{best_save_path}'")
+            epochs_no_improve = 0  # New: Reset counter
+        else:
+            epochs_no_improve += 1 # New: Increment counter
+            logger.info(f"  Validation Macro-F1 did not improve for {epochs_no_improve} epoch(s). Best was {best_val_f1:.4f} at epoch {best_epoch}.")
+
+        if epochs_no_improve >= patience: # New: Check for early stopping
+            logger.info(f"Early stopping triggered after {epoch} epochs. No improvement for {patience} epochs.")
+            break  # New: Stop training
 
     logger.info("\n" + "=" * 30 + " Training Finished " + "=" * 30)
-    logger.info(f"Final model state saved for epoch {epochs} to {epoch_save_path}.")  # Corrected variable
-    logger.info(f"Best model (Val Macro-F1: {best_val_f1:.4f}) saved to '{os.path.join(save_dir, 'model_best.pt')}'")
+    # logger.info(f"Final model state potentially saved for epoch {epoch} to {epoch_save_path}.") # Potentially misleading if early stopped
+    logger.info(f"Best model (Val Macro-F1: {best_val_f1:.4f} at epoch {best_epoch}) saved to '{os.path.join(save_dir, 'model_best.pt')}'")
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -329,13 +341,13 @@ def test_model(
         batch_size: int = 64,
         device: str = "cuda",
         model_path: Optional[str] = None,
-        logger: Optional[logging.Logger] = None,  # <<<< NEW
-        num_workers: int = 0  # <<<< NEW for DataLoader consistency
+        logger: Optional[logging.Logger] = None,
+        num_workers: int = 0
 ):
     if logger is None:
         logger = module_logger
 
-    if model_path and os.path.exists(model_path):  # Added os.path.exists check
+    if model_path and os.path.exists(model_path):
         logger.info(f"Loading model state for testing from: {model_path}")
         try:
             model.load_state_dict(torch.load(model_path, map_location=device))
@@ -343,10 +355,9 @@ def test_model(
         except Exception as e:
             logger.error(f"Error loading model state from {model_path}: {e}", exc_info=True)
             logger.info("Proceeding with the model currently in memory.")
-    elif model_path:  # If path provided but not found
+    elif model_path:
         logger.warning(f"Specified model_path '{model_path}' not found. Using model currently in memory.")
 
-    # Use num_workers here as well if desired for testing
     loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers,
                         pin_memory=True if num_workers > 0 else False)
     model.to(device).eval()
@@ -354,10 +365,10 @@ def test_model(
     logger.info(f"Evaluating on Test Set (Device: '{device}', NumWorkers: {num_workers})...")
 
     preds_all, labels_all = [], []
-    nan_batches_test = 0  # Added
+    nan_batches_test = 0
     with torch.no_grad():
         for batch in loader:
-            try:  # Added try-except
+            try:
                 packet_seq = batch["packet_seq"].to(device)
                 attention_mask = batch["attention_mask"].to(device)
                 labels = batch["label"].to(device)
@@ -366,14 +377,13 @@ def test_model(
                 logger.error(f"❌ Test Batch missing expected key: {e}.", exc_info=True)
                 continue
 
-            # Added NaN check for test inputs
             if not torch.isfinite(packet_seq).all():
                 nan_batches_test += 1
                 logger.warning(f"  ❌ NaN/Inf packet_seq in test data. Skipping batch.")
                 continue
 
             logits = model(packet_seq, cat_feats, attention_mask=attention_mask)
-            if not torch.isfinite(logits).all():  # Check logits for NaNs
+            if not torch.isfinite(logits).all():
                 nan_batches_test += 1
                 logger.warning(f"  ❌ NaN/Inf logits in test data. Skipping batch.")
                 continue
@@ -383,7 +393,7 @@ def test_model(
             labels_all.extend(labels.cpu().tolist())
 
     logger.info(f"Test completed. NaN batches skipped: {nan_batches_test}")
-    if not labels_all:  # Handle empty results
+    if not labels_all:
         logger.error("No predictions made from the test set. Check data or NaN issues.")
         return
 
@@ -392,9 +402,9 @@ def test_model(
     logger.info(f"Overall Test Accuracy: {acc:.4f}")
 
     target_names = None
-    if hasattr(test_dataset, 'classes'):  # Check for 'classes' attribute
+    if hasattr(test_dataset, 'classes'):
         target_names = test_dataset.classes
-    elif hasattr(test_dataset, 'get_target_names'):  # Your original check
+    elif hasattr(test_dataset, 'get_target_names'):
         try:
             target_names = test_dataset.get_target_names()
         except Exception as e:
@@ -411,6 +421,5 @@ def test_model(
     logger.info(f"Classification Report:\n{report}")
 
     cm = confusion_matrix(labels_all, preds_all)
-    # Could log cm as a string or use a library to pretty print if needed for file logs
     logger.info(f"Confusion Matrix:\n{cm}")
     logger.info("\n" + "=" * 78)

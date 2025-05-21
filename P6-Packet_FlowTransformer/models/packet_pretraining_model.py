@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from typing import Dict
 
-class IoTTransformer(nn.Module):
+class PacketPretrainingModel(nn.Module):
     """Transformer model that consumes:
         - `packet_seq`    : FloatTensor [B, T, F_num]  (numeric features)
         - `cat_feats`     : Dict[col, LongTensor [B, T]] (categorical IDs)

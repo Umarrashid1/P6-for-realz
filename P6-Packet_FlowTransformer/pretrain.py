@@ -9,7 +9,7 @@ import logging
 
 # Project-specific imports
 from pipeline.iot_dataset import IoTSequenceDataset
-from models.transformer import IoTTransformer
+from models.packet_pretraining_model import PacketPretrainingModel
 from train.train import train_model, test_model # Assuming these will be updated
 from utils.category_mapping import load_mappings
 from pipeline.config import categorical_columns_packets, numerical_columns_packets, LABEL_MAPPING
@@ -165,7 +165,7 @@ try:
     # REMOVED: Detailed logging of model_arguments_for_instance as JSON, individual params logged above
     # REMOVED: Saving of model_arguments_for_instance to PACKET_MODEL_CONFIG_SAVE_PATH
 
-    model = IoTTransformer(**model_arguments_for_instance)
+    model = PacketPretrainingModel(**model_arguments_for_instance)
     model.to(DEVICE)
     logger.info("   ✅ IoTTransformer model instantiated and moved to device.")
 except Exception as e:
