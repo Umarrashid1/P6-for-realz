@@ -210,7 +210,7 @@ def train_model(
                 labels = batch["label"].to(device)
                 cat_feats = {c: batch[c].to(device) for c in categorical_columns if c in batch}
             except KeyError as e:
-                logger.error(f"❌ Batch missing expected key: {e}. Check your IoTSequenceDataset __getitem__.",
+                logger.error(f"❌ Batch missing expected key: {e}. Check your IoTPacketDataset __getitem__.",
                              exc_info=True)
                 continue
 

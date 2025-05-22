@@ -10,7 +10,7 @@ import numpy as np # For np.random.seed
 import logging # Import the logging module
 
 # Your existing imports
-from pipeline.iot_flowdataset import IoTFlowDataset
+from pipeline.iot_flow_dataset import IoTFlowDataset
 from models.flow_finetuning_model import FlowFineTuningModel # Re-using this class
 from train.train_flows import fine_tune_flow_model, test_flow_model
 # from pipeline.config import LABEL_MAPPING # If NUM_CLASSES_FLOW isn't in config

@@ -1,4 +1,4 @@
-# pipeline/iot_dataset.py
+# pipeline/iot_packet_dataset.py
 """PyTorch Dataset for pre‑batched IoT flow sequences.
 
 Returns a dict compatible with the updated training loop:
@@ -20,7 +20,7 @@ from torch.utils.data import Dataset
 
 from .config import categorical_columns_packets  # adjust import path if different
 
-class IoTSequenceDataset(Dataset):
+class IoTPacketDataset(Dataset):
     """Loads the merged .pt file and yields item‑level tensors."""
 
     def __init__(self, pt_file_path: str | Path, max_seq_len: int = 64):

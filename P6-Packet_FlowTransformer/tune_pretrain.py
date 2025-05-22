@@ -15,7 +15,7 @@ from collections import Counter
 from sklearn.utils.class_weight import compute_class_weight
 
 # --- Project-specific Imports ---
-from pipeline.iot_dataset import IoTSequenceDataset
+from pipeline.iot_packet_dataset import IoTPacketDataset
 from models.packet_pretraining_model import PacketPretrainingModel
 from utils.category_mapping import load_mappings
 from pipeline.config import categorical_columns_packets, numerical_columns_packets, LABEL_MAPPING
@@ -65,7 +65,7 @@ script_logger.info(f"Using device: {DEVICE}")
 PROCESSED_PACKET_DATA_PATH = Path(MAIN_CONFIG['dataset_paths']['processed_packet_pt'])
 MAX_SEQ_LEN_PACKET_CONFIG = MAIN_CONFIG['model_architecture']['max_seq_len_packet']
 try:
-    FULL_PACKET_DATASET = IoTSequenceDataset(PROCESSED_PACKET_DATA_PATH, max_seq_len=MAX_SEQ_LEN_PACKET_CONFIG)
+    FULL_PACKET_DATASET = IoTPacketDataset(PROCESSED_PACKET_DATA_PATH, max_seq_len=MAX_SEQ_LEN_PACKET_CONFIG)
     script_logger.info(f"Full packet dataset loaded. Total sequences: {len(FULL_PACKET_DATASET)}")
 except Exception as e:
     script_logger.error(f"Error loading full packet dataset: {e}", exc_info=True)

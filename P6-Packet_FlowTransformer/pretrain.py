@@ -8,7 +8,7 @@ import numpy as np
 import logging
 
 # Project-specific imports
-from pipeline.iot_dataset import IoTSequenceDataset
+from pipeline.iot_packet_dataset import IoTPacketDataset
 from models.packet_pretraining_model import PacketPretrainingModel
 from train.train import train_model, test_model # Assuming these will be updated
 from utils.category_mapping import load_mappings
@@ -125,7 +125,7 @@ logger.info(f"Packet model checkpoints will be saved to: {PACKET_MODEL_SAVE_DIR}
 # --- 1. Load Sequence Dataset ---
 logger.info(f"1. Loading packet sequence dataset from: {PROCESSED_PACKET_DATA_PATH} with max_seq_len={MAX_SEQ_LEN_PACKET}")
 try:
-    full_dataset = IoTSequenceDataset(PROCESSED_PACKET_DATA_PATH, max_seq_len=MAX_SEQ_LEN_PACKET)
+    full_dataset = IoTPacketDataset(PROCESSED_PACKET_DATA_PATH, max_seq_len=MAX_SEQ_LEN_PACKET)
     logger.info(f"   Dataset loaded. Total sequences: {len(full_dataset)}")
 except Exception as e:
     logger.error(f"❌ Error loading packet dataset: {e}", exc_info=True)

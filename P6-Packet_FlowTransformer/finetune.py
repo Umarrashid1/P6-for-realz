@@ -9,7 +9,7 @@ import numpy as np
 import logging
 
 # Project-specific imports
-from pipeline.iot_flowdataset import IoTFlowDataset
+from pipeline.iot_flow_dataset import IoTFlowDataset
 from models.packet_pretraining_model import PacketPretrainingModel  # Needed to reconstruct pre-trained model arch
 from models.flow_finetuning_model import FlowFineTuningModel
 from train.train_flows import fine_tune_flow_model, test_flow_model  # Assumes this is updated for logger
