@@ -298,6 +298,16 @@ if __name__ == "__main__":
         pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=2, interval_steps=1)
     )
 
+    manual_config_params = {
+        'lr_pretrain': 0.0003,
+        'batch_size_pretrain': 64,
+        'd_model': 64,
+        'num_heads': 4,
+        'num_layers': 2,
+        'dropout_transformer_body': 0.1
+    }
+    study_pretrain.enqueue_trial(manual_config_params)
+
     study_pretrain.optimize(objective_pretrain, n_trials=N_TRIALS_PRETRAIN)
 
     script_logger.info("\n--- Optuna Pre-training Study Complete ---")
