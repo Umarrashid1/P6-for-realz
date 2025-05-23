@@ -160,6 +160,7 @@ def objective_pretrain(trial: optuna.trial.Trial):
         pin_memory=pin_memory_flag
     )
 
+
     model = PacketPretrainingModel(
         input_dim=INPUT_DIM_NUMERICAL_PACKET_CONFIG,
         cat_sizes=CAT_SIZES_PACKETS,
