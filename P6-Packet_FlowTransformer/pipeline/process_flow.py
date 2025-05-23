@@ -276,7 +276,7 @@ if __name__ == "__main__":
     # For simplicity, the script assumes a default "category_mappings.json" if not specified.
     # You might want to make this configurable if you have separate mappings for packets and flows.
 
-    TEST_MODE_FLAG = True  # Set to True for quick testing on fewer rows
+    TEST_MODE_FLAG = False  # Set to True for quick testing on fewer rows
     ROWS_PER_FILE_LIMIT_IF_TEST = 10000  # Used only if TEST_MODE_FLAG is True
 
     # --- Ensure necessary files/dirs exist ---
