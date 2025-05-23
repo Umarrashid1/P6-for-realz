@@ -360,7 +360,7 @@ def create_packet_sequences(
         logging.info(
             f"[BATCH {batch_number}] Submitting {len(proc_args_batch)} loaded DataFrames for parallel processing...")
         processing_pool_start_time = time.time()
-        num_process_workers = 12
+        num_process_workers = 6
         logging.info(f"[BATCH {batch_number}] Using {num_process_workers} process workers.")
 
         batch_results_list = []  # This will hold results from process_fragment
