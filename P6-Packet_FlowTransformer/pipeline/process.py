@@ -320,7 +320,7 @@ def create_packet_sequences(
         loading_pool_start_time = time.time()
         loaded_dfs_for_batch = []
         # Consider reducing num_load_workers if memory is an issue during loading itself
-        num_load_workers = min(os.cpu_count() * 2 if os.cpu_count() else 4, 16)  # Reduced from 32
+        num_load_workers = 12
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_load_workers) as tpool:
             futures_load_batch = {
                 tpool.submit(io_utils.load_csv_file, fp_load_b, test_mode, effective_rows_per_file): Path(
