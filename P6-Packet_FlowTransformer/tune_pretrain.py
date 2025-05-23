@@ -142,9 +142,23 @@ def objective_pretrain(trial: optuna.trial.Trial):
     generator = torch.Generator().manual_seed(MAIN_CONFIG['general_settings']['random_seed'])
     train_dataset, val_dataset, _ = random_split(FULL_PACKET_DATASET, [train_size, val_size, dummy_test_size],
                                                  generator=generator)
+    num_dataloader_workers = MAIN_CONFIG['general_settings'].get('num_workers_loader', 0) 
+    pin_memory_flag = (DEVICE == "cuda" and num_dataloader_workers > 0)
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+    ttrain_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_dataloader_workers, # This will now be 12
+        pin_memory=pin_memory_flag
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_dataloader_workers, # This will now be 12
+        pin_memory=pin_memory_flag
+    )
 
     model = PacketPretrainingModel(
         input_dim=INPUT_DIM_NUMERICAL_PACKET_CONFIG,
