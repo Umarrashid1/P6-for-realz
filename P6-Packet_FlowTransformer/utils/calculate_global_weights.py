@@ -15,7 +15,7 @@ WEIGHTS_DIR = Path(config['dataset_paths']['raw_packet_dir']).parent / "weights"
 
 
 # For Packet Data
-PACKET_DATA_PATH = Path(config['dataset_paths']['packet_subset_halved.pt'])
+PACKET_DATA_PATH = Path(config['dataset_paths']['processed_packet_pt'])
 packet_dataset = IoTPacketDataset(PACKET_DATA_PATH, max_seq_len=MAX_SEQ_LEN_PACKET_CONFIG)
 packet_labels = [packet_dataset[i]["label"].item() for i in range(len(packet_dataset))]
 packet_classes = np.unique(packet_labels)
