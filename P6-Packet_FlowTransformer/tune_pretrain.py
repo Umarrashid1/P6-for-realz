@@ -62,7 +62,7 @@ if DEVICE == "cuda" and not torch.cuda.is_available():
     DEVICE = "cpu"
 script_logger.info(f"Using device: {DEVICE}")
 
-PROCESSED_PACKET_DATA_PATH = Path(MAIN_CONFIG['dataset_paths']['packet_subset_halved.pt'])
+PROCESSED_PACKET_DATA_PATH = Path(MAIN_CONFIG['dataset_paths']['processed_packet_pt'])
 MAX_SEQ_LEN_PACKET_CONFIG = MAIN_CONFIG['model_architecture']['max_seq_len_packet']
 try:
     FULL_PACKET_DATASET = IoTPacketDataset(PROCESSED_PACKET_DATA_PATH, max_seq_len=MAX_SEQ_LEN_PACKET_CONFIG)
