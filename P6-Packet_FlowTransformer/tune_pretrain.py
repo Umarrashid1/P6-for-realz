@@ -19,7 +19,7 @@ from pipeline.iot_packet_dataset import IoTPacketDataset
 from models.packet_pretraining_model import PacketPretrainingModel
 from utils.category_mapping import load_mappings
 from pipeline.config import categorical_columns_packets, numerical_columns_packets, LABEL_MAPPING
-from train.train import _balanced_loss
+from utils.train_utils import get_balanced_loss
 
 # --- Configuration & Basic Setup ---
 CONFIG_FILE_PATH = Path("config.json")
@@ -175,8 +175,7 @@ def objective_pretrain(trial: optuna.trial.Trial):
     model.to(DEVICE)
 
     optimizer = optim.AdamW(model.parameters(), lr=lr)
-    criterion = _balanced_loss(train_dataset, DEVICE, logger=silent_logger)
-
+    criterion = get_balanced_loss(DEVICE, "packet", logger_instance=silent_logger)
     best_val_macro_f1_for_trial = -1.0
 
     for epoch in range(1, epochs_pretrain + 1):

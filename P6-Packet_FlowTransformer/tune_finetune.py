@@ -20,7 +20,7 @@ from models.packet_pretraining_model import PacketPretrainingModel  # To reconst
 from models.flow_finetuning_model import FlowFineTuningModel
 from utils.category_mapping import load_mappings  # For packet cat_sizes if needed
 from pipeline.config import categorical_columns_packets, numerical_columns_packets  # For packet model structure
-
+from utils.train_utils import get_balanced_loss
 # --- Configuration & Basic Setup ---
 CONFIG_FILE_PATH = Path("config.json")
 LOG_FILE_OPTUNA_FINETUNE = "optuna_finetune_log.txt"  # New log file
@@ -52,32 +52,7 @@ def load_main_config(config_path):
 
 
 # --- Helper: Balanced Loss ---
-def _balanced_loss_flow(train_ds, device, logger_instance=None) -> nn.CrossEntropyLoss:
-    if logger_instance is None:
-        logger_instance = silent_logger
-    try:
-        labels = [train_ds[i]["label"].item() for i in range(len(train_ds))]
-    except (KeyError, AttributeError, IndexError) as e:
-        logger_instance.warning(f"Could not extract labels for balanced loss ({e}). Using unweighted CrossEntropyLoss.")
-        return nn.CrossEntropyLoss()
-    if not labels:
-        logger_instance.warning("No labels in training dataset for balanced loss. Using unweighted CrossEntropyLoss.")
-        return nn.CrossEntropyLoss()
-    classes = np.unique(labels)
-    if len(classes) <= 1:
-        logger_instance.warning("<= 1 class in training data. Using unweighted CrossEntropyLoss.")
-        return nn.CrossEntropyLoss()
-    try:
-        weights = compute_class_weight("balanced", classes=classes, y=labels)
-        weights_t = torch.tensor(weights, dtype=torch.float32, device=device)
-        if not torch.isfinite(weights_t).all():
-            logger_instance.warning("Non-finite class weights computed. Using unweighted CrossEntropyLoss.")
-            return nn.CrossEntropyLoss()
-        logger_instance.debug(f"Using class-balanced weights for flow: {weights_t.cpu().numpy()}")
-        return nn.CrossEntropyLoss(weight=weights_t)
-    except ValueError as e:
-        logger_instance.warning(f"Could not compute class weights ({e}). Using unweighted CrossEntropyLoss.")
-        return nn.CrossEntropyLoss()
+
 
 
 # --- Global Variables (Loaded Once) ---
@@ -232,7 +207,7 @@ def objective_finetune(trial: optuna.trial.Trial):
     # --- End Model Setup ---
 
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=lr_finetune)
-    criterion = _balanced_loss_flow(train_dataset, DEVICE, logger_instance=objective_logger)
+    criterion = get_balanced_loss(DEVICE, "packet", logger_instance=silent_logger)
     best_val_macro_f1_for_trial = -1.0
 
     for epoch in range(1, epochs_finetune + 1):
