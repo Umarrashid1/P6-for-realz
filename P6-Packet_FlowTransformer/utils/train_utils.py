@@ -44,17 +44,17 @@ except Exception as e:
     print(f"Warning: Could not load flow weights from {FLOW_WEIGHTS_PATH}: {e}")
 
 
-def get_balanced_loss(device, data_type: str, logger_instance=None) -> nn.CrossEntropyLoss:
-    if logger_instance is None:
+def get_balanced_loss(device, data_type: str, logger=None) -> nn.CrossEntropyLoss:
+    if logger is None:
         # Fallback logger if none provided (e.g. for main training scripts that might not have specific trial loggers)
-        logger_instance = logging.getLogger('get_balanced_loss_fallback')
-        if not logger_instance.hasHandlers(): # Avoid adding handlers multiple times
+        logger = logging.getLogger('get_balanced_loss_fallback')
+        if not logger.hasHandlers(): # Avoid adding handlers multiple times
             handler = logging.StreamHandler(sys.stdout) # Or logging.NullHandler()
             formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
             handler.setFormatter(formatter)
-            logger_instance.addHandler(handler)
-            logger_instance.setLevel(logging.INFO) # Or desired level
-            logger_instance.propagate = False
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO) # Or desired level
+            logger.propagate = False
 
 
     weights_to_use = None
@@ -66,11 +66,11 @@ def get_balanced_loss(device, data_type: str, logger_instance=None) -> nn.CrossE
     if weights_to_use is not None:
         weights_t = weights_to_use.to(device)
         if torch.isfinite(weights_t).all():
-            logger_instance.debug(f"Using precomputed class-balanced weights for {data_type}: {weights_t.cpu().numpy()}")
+            logger.debug(f"Using precomputed class-balanced weights for {data_type}: {weights_t.cpu().numpy()}")
             return nn.CrossEntropyLoss(weight=weights_t)
         else:
-            logger_instance.warning(f"Precomputed weights for {data_type} contain NaN/Inf. Using unweighted CrossEntropyLoss.")
+            logger.warning(f"Precomputed weights for {data_type} contain NaN/Inf. Using unweighted CrossEntropyLoss.")
             return nn.CrossEntropyLoss()
     else:
-        logger_instance.warning(f"Precomputed weights for {data_type} not available or not loaded. Using unweighted CrossEntropyLoss.")
+        logger.warning(f"Precomputed weights for {data_type} not available or not loaded. Using unweighted CrossEntropyLoss.")
         return nn.CrossEntropyLoss()

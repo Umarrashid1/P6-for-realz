@@ -111,7 +111,7 @@ def load_transformer_body_weights(target_model: FlowFineTuningModel, pretrained_
             logger_instance.warning(
                 f"   ⚠️ Missing in target transformer_encoder_body: {len(genuinely_missing_in_body)} keys (e.g., {genuinely_missing_in_body[:3]}...). This might be an issue.")
         # Log other missing keys if necessary, but they are expected (new flow layers, new classifier)
-        # logger_instance.info(f"   ℹ️ Other missing keys (expected for new layers): {[k for k in missing if not k.startswith(TARGET_BODY_PREFIX)][:3]}...")
+        # logger.info(f"   ℹ️ Other missing keys (expected for new layers): {[k for k in missing if not k.startswith(TARGET_BODY_PREFIX)][:3]}...")
     if unexpected:
         logger_instance.error(
             f"   ❌ Unexpected keys in source checkpoint (should be 0 if loading only body): {len(unexpected)} (e.g., {unexpected[:3]}...).")

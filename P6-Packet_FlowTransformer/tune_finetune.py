@@ -207,7 +207,7 @@ def objective_finetune(trial: optuna.trial.Trial):
     # --- End Model Setup ---
 
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=lr_finetune)
-    criterion = get_balanced_loss(DEVICE, "packet", logger_instance=silent_logger)
+    criterion = get_balanced_loss(DEVICE, "packet", logger=silent_logger)
     best_val_macro_f1_for_trial = -1.0
 
     for epoch in range(1, epochs_finetune + 1):

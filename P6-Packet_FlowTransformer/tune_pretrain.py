@@ -175,7 +175,7 @@ def objective_pretrain(trial: optuna.trial.Trial):
     model.to(DEVICE)
 
     optimizer = optim.AdamW(model.parameters(), lr=lr)
-    criterion = get_balanced_loss(DEVICE, "packet", logger_instance=silent_logger)
+    criterion = get_balanced_loss(DEVICE, "packet", logger=silent_logger)
     best_val_macro_f1_for_trial = -1.0
 
     for epoch in range(1, epochs_pretrain + 1):
