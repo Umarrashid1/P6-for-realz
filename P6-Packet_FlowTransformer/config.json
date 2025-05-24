@@ -62,6 +62,8 @@
      "test_ratio_flow": 0.1
   },
   "optuna_params": {
-  "n_trials_pretrain": 50
-}
+    "n_trials_pretrain": 50,
+    "n_trials_finetune": 30,
+    "n_trials_baseline_flow": 30
+  }
 }
