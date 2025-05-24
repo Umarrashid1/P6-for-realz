@@ -56,7 +56,7 @@ if DEVICE == "cuda" and not torch.cuda.is_available():
     DEVICE = "cpu"
 script_logger.info(f"Using device: {DEVICE}")
 
-PROCESSED_FLOW_DATA_PATH = Path(MAIN_CONFIG['dataset_paths']['processed_flow_pt'])
+PROCESSED_FLOW_DATA_PATH = Path(MAIN_CONFIG['dataset_paths']['processed_packet_pt'])
 
 # --- Load Pre-calculated Class Weights (NEW) ---
 WEIGHTS_DIR = Path(MAIN_CONFIG['dataset_paths']['raw_packet_dir']).parent / "weights"
