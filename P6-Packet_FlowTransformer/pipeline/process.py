@@ -264,16 +264,18 @@ def process_fragment(args: Tuple[pd.DataFrame, str, int]) -> Tuple[
 
 def create_packet_sequences(
         dataset_dir: str,
-        output_file: str,
+        output_file: str,  # This will now be a base name for part files
         test_mode: bool = False,
         rows_per_file: int = 0,
         max_seq_len: int = 64,
         files_per_processing_batch: int = 30
+        # shards_per_output_file parameter removed, will be calculated for 2 parts
 ):
     logging.info(f"--- Starting create_packet_sequences (Packet Data) ---")
-    logging.info(f"Dataset dir: {dataset_dir}, Output file: {output_file}")
+    logging.info(f"Dataset dir: {dataset_dir}, Output base for parts: {output_file}")
     logging.info(f"Test mode: {test_mode}, Rows per file (0 for all): {rows_per_file}, Max seq len: {max_seq_len}")
     logging.info(f"Files per internal processing batch: {files_per_processing_batch}")
+    logging.info(f"Aggregation will produce two output part files.")
 
     effective_rows_per_file = rows_per_file if rows_per_file > 0 else None
     if not test_mode and rows_per_file == 0:
@@ -288,30 +290,27 @@ def create_packet_sequences(
         logging.error("No CSV files found. Exiting.")
         raise RuntimeError("No CSV files found in dataset directory.")
 
-    # The main loop now focuses on ensuring shards are created.
-    # In-memory accumulation lists (final_pkt_tensors, etc.) are removed from this stage.
-    processed_shards_count = 0
+    processed_shards_this_run_count = 0
 
     for i in range(0, len(all_files_full_list), files_per_processing_batch):
         current_batch_file_paths = all_files_full_list[i:i + files_per_processing_batch]
         batch_number = (i // files_per_processing_batch) + 1
-        total_batches = (len(all_files_full_list) + files_per_processing_batch - 1) // files_per_processing_batch
+        total_file_processing_batches = (
+                                                    len(all_files_full_list) + files_per_processing_batch - 1) // files_per_processing_batch
 
         logging.info(
-            f"\n--- Processing Batch {batch_number}/{total_batches} ({len(current_batch_file_paths)} files) to ensure shards exist ---")
+            f"\n--- Ensuring Shards Exist: Batch {batch_number}/{total_file_processing_batches} ({len(current_batch_file_paths)} files) ---")
 
         pending_files_in_batch_paths = []
         for fp_in_batch in current_batch_file_paths:
             shard_path = CHECKPOINT_DIR / (Path(fp_in_batch).stem + ".pt")
             if shard_path.exists():
-                logging.debug(
-                    f"[BATCH {batch_number}] Checkpoint for {Path(fp_in_batch).name} already exists. Skipping processing for this file.")
-                processed_shards_count += 1  # Count existing shards as processed for this run's purpose
+                logging.debug(f"[BATCH {batch_number}] Checkpoint for {Path(fp_in_batch).name} already exists.")
                 continue
             pending_files_in_batch_paths.append(fp_in_batch)
 
         if not pending_files_in_batch_paths:
-            logging.info(f"[BATCH {batch_number}] All files in this batch already have shards. Moving to next batch.")
+            logging.info(f"[BATCH {batch_number}] All files in this batch already have shards.")
             continue
 
         logging.info(
@@ -319,8 +318,9 @@ def create_packet_sequences(
 
         loading_pool_start_time = time.time()
         loaded_dfs_for_batch = []
-        # Consider reducing num_load_workers if memory is an issue during loading itself
+
         num_load_workers = 12
+        logging.info(f"[BATCH {batch_number}] Using {num_load_workers} thread workers for loading CSVs.")
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_load_workers) as tpool:
             futures_load_batch = {
                 tpool.submit(io_utils.load_csv_file, fp_load_b, test_mode, effective_rows_per_file): Path(
@@ -336,85 +336,66 @@ def create_packet_sequences(
                         logging.info(
                             f"[BATCH {batch_number}] Loaded file {i_load_b + 1}/{len(pending_files_in_batch_paths)}: {file_name_loaded_b} (Shape: {result_load_b[0].shape})")
                     else:
-                        logging.warning(
-                            f"[BATCH {batch_number}] Skipped during load (None DataFrame or empty): {file_name_loaded_b}")
+                        logging.warning(f"[BATCH {batch_number}] Skipped during load: {file_name_loaded_b}")
                 except Exception as e:
                     logging.error(f"[BATCH {batch_number}] Error loading file {file_name_loaded_b}: {e}",
                                   exc_info=False)
         logging.info(
-            f"[BATCH {batch_number}] Finished loading {len(loaded_dfs_for_batch)} DataFrames for processing in {time.time() - loading_pool_start_time:.2f}s.")
+            f"[BATCH {batch_number}] Loaded {len(loaded_dfs_for_batch)} DataFrames in {time.time() - loading_pool_start_time:.2f}s.")
 
         if not loaded_dfs_for_batch:
-            logging.warning(
-                f"[BATCH {batch_number}] No valid DataFrames loaded in this batch to process. Skipping to next batch.")
+            logging.warning(f"[BATCH {batch_number}] No DataFrames loaded for processing in this batch.")
             continue
 
         proc_args_batch = [(df_proc_b, path_proc_b, max_seq_len) for df_proc_b, path_proc_b in loaded_dfs_for_batch if
                            df_proc_b is not None]
-
         if not proc_args_batch:
-            logging.warning(
-                f"[BATCH {batch_number}] No arguments for processing after filtering Nones. Skipping to next batch.")
+            logging.warning(f"[BATCH {batch_number}] No valid processing arguments after filtering DataFrames.")
             continue
 
-        logging.info(
-            f"[BATCH {batch_number}] Submitting {len(proc_args_batch)} loaded DataFrames for parallel processing...")
-        processing_pool_start_time = time.time()
-        num_process_workers = 6
+        logging.info(f"[BATCH {batch_number}] Submitting {len(proc_args_batch)} DataFrames for parallel processing...")
+
+        num_process_workers = 12
         logging.info(f"[BATCH {batch_number}] Using {num_process_workers} process workers.")
 
-        batch_results_list = []  # This will hold results from process_fragment
+        batch_results_list = []
         with concurrent.futures.ProcessPoolExecutor(max_workers=num_process_workers) as ppool:
             future_to_path_map_batch = {ppool.submit(process_fragment, arg_b): arg_b[1] for arg_b in proc_args_batch}
             for k_proc_b, future_proc_b in enumerate(concurrent.futures.as_completed(future_to_path_map_batch)):
                 original_file_path_b = future_to_path_map_batch[future_proc_b]
                 try:
-                    # process_fragment returns (file_path, pkt_arrays, label_list, mask_arrays, cat_arrays_dict_for_fragment)
-                    # We need all these to save the shard correctly.
                     result_from_fragment = future_proc_b.result()
-                    batch_results_list.append(result_from_fragment)  # Store the full tuple
+                    batch_results_list.append(result_from_fragment)
                     logging.debug(
-                        f"[BATCH {batch_number}] Processed result {k_proc_b + 1}/{len(proc_args_batch)} for: {Path(original_file_path_b).name}")
+                        f"[BATCH {batch_number}] Retrieved result {k_proc_b + 1}/{len(proc_args_batch)} for: {Path(original_file_path_b).name}")
                 except Exception as exc_b:
                     logging.error(
                         f"[BATCH {batch_number}] File {Path(original_file_path_b).name} generated an exception during process_fragment: {exc_b}",
                         exc_info=True)
 
-        logging.info(
-            f"[BATCH {batch_number}] Finished processing {len(batch_results_list)} DataFrames in {time.time() - processing_pool_start_time:.2f}s.")
+        logging.info(f"[BATCH {batch_number}] Finished parallel processing for {len(batch_results_list)} DataFrames.")
 
-        # Now, save the results from batch_results_list as shards
         for file_path_processed, pkt_arrs, lbls, masks, cat_arrs_dict_frag in batch_results_list:
-            if pkt_arrs is None or not pkt_arrs:  # Check if process_fragment returned valid data
+            if pkt_arrs is None or not pkt_arrs:
                 logging.warning(
-                    f"[BATCH {batch_number}] No sequences generated for {Path(file_path_processed).name}, skipping shard save.")
+                    f"[BATCH {batch_number}] No sequences from {Path(file_path_processed).name}, skipping shard save.")
                 continue
 
             target_shard_path = CHECKPOINT_DIR / (Path(file_path_processed).stem + ".pt")
-            if target_shard_path.exists():  # Should ideally not happen if pending_files logic is correct
-                logging.info(
-                    f"[BATCH {batch_number}] Shard {target_shard_path.name} already exists (unexpected). Overwriting.")
-
             try:
-                # save_shard_start_time = time.time() # Optional timing for shard save
                 valid_cat_arrs_shard = {}
                 num_sequences_in_shard_save = len(pkt_arrs)
-
                 for col_name_cat_save_s in categorical_columns_packets:
                     col_data_list_s = cat_arrs_dict_frag.get(col_name_cat_save_s)
                     if col_data_list_s and all(isinstance(arr_s, np.ndarray) for arr_s in col_data_list_s) and len(
                             col_data_list_s) == num_sequences_in_shard_save:
                         stacked_cat_col_s = np.stack(col_data_list_s)
-                        if stacked_cat_col_s.shape[0] == num_sequences_in_shard_save:  # Ensure first dim matches
+                        if stacked_cat_col_s.shape[0] == num_sequences_in_shard_save:
                             valid_cat_arrs_shard[col_name_cat_save_s] = torch.from_numpy(stacked_cat_col_s).long()
-                        else:  # Fallback if stacking failed or shape mismatch
-                            logging.warning(
-                                f"Shape mismatch for cat col {col_name_cat_save_s} in {Path(file_path_processed).name}. Expected {num_sequences_in_shard_save} sequences, got {stacked_cat_col_s.shape[0]}. Using zeros.")
+                        else:
                             valid_cat_arrs_shard[col_name_cat_save_s] = torch.zeros(
                                 (num_sequences_in_shard_save, max_seq_len), dtype=torch.long)
-                    else:  # If data is missing or malformed for this cat feature
-                        logging.debug(
-                            f"Missing or malformed cat data for {col_name_cat_save_s} in {Path(file_path_processed).name}. Using zeros.")
+                    else:
                         valid_cat_arrs_shard[col_name_cat_save_s] = torch.zeros(
                             (num_sequences_in_shard_save, max_seq_len), dtype=torch.long)
 
@@ -428,7 +409,7 @@ def create_packet_sequences(
                     **valid_cat_arrs_shard
                 }
                 torch.save(shard_to_save, target_shard_path)
-                processed_shards_count += 1
+                processed_shards_this_run_count += 1
                 logging.info(
                     f"[BATCH {batch_number}][CKPT] Wrote shard for {Path(file_path_processed).name} ({num_sequences_in_shard_save} sequences) to {target_shard_path}")
             except Exception as e:
@@ -436,168 +417,157 @@ def create_packet_sequences(
                     f"[BATCH {batch_number}] Error creating or saving shard for {Path(file_path_processed).name}: {e}",
                     exc_info=True)
 
-        loaded_dfs_for_batch.clear()  # Clear DataFrames for this batch
-        batch_results_list.clear()  # Clear results for this batch
+        loaded_dfs_for_batch.clear()
+        batch_results_list.clear()
         logging.info(f"[BATCH {batch_number}] Cleared DataFrames and results from memory for this batch.")
         logging.info(
-            f"--- End of Batch {batch_number}/{total_batches}. Total shards ensured/created so far: {processed_shards_count} ---")
+            f"--- End of Batch {batch_number}/{total_file_processing_batches}. Total shards newly created in this run: {processed_shards_this_run_count} ---")
 
-    # --- Memory-Efficient Aggregation Phase ---
-    logging.info(
-        f"\n--- Starting Memory-Efficient Aggregation from {processed_shards_count} Shard Files in {CHECKPOINT_DIR} ---")
-    aggregation_start_time = time.time()
+    logging.info(f"--- All input files processed. Shards are available in {CHECKPOINT_DIR} for aggregation. ---")
 
+    # --- Memory-Efficient Aggregation into Two Parts ---
     all_shard_files = sorted(CHECKPOINT_DIR.glob("*.pt"))
+    total_shards_to_aggregate = len(all_shard_files)
 
     if not all_shard_files:
-        logging.error(f"No shard files found in {CHECKPOINT_DIR}. Cannot aggregate. Ensure previous steps completed.")
+        logging.error(f"No shard files found in {CHECKPOINT_DIR}. Cannot aggregate.")
         return
 
-    # Initialize aggregated_data dictionary to hold the growing concatenated tensors
-    aggregated_data: Dict[str, Optional[torch.Tensor]] = {
-        "packet_seq": None,
-        "label": None,
-        "attention_mask": None,
-    }
-    for col in categorical_columns_packets:  # Initialize keys for all categorical columns
-        aggregated_data[col] = None
+    logging.info(
+        f"\n--- Starting Memory-Efficient Aggregation from {total_shards_to_aggregate} Shard Files into Two Parts ---")
+    aggregation_start_time = time.time()
+
+    output_file_path_obj = Path(output_file)
+    output_base_name = output_file_path_obj.stem
+    output_suffix = output_file_path_obj.suffix
+    output_dir = output_file_path_obj.parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Calculate number of shards for the first part (roughly half, favoring first part if odd)
+    shards_for_part_1 = (total_shards_to_aggregate + 1) // 2
+    shards_for_part_2 = total_shards_to_aggregate - shards_for_part_1
+
+    part_files_to_process = [
+        all_shard_files[:shards_for_part_1],
+        all_shard_files[shards_for_part_1:]
+    ]
 
     expected_keys_in_shard = ["packet_seq", "label", "attention_mask"] + categorical_columns_packets
     num_numerical_features = len(numerical_columns_packets)
 
-    for shard_idx, shard_file_path in enumerate(all_shard_files):
-        logging.info(f"Aggregating shard {shard_idx + 1}/{len(all_shard_files)}: {shard_file_path.name}")
-        try:
-            current_shard_data = torch.load(shard_file_path, map_location='cpu')  # Load to CPU
+    for part_idx, current_part_shard_list in enumerate(part_files_to_process):
+        part_num = part_idx + 1
+        if not current_part_shard_list:
+            logging.info(f"No shards to process for part {part_num}. Skipping.")
+            continue
 
-            for key in expected_keys_in_shard:
-                if key not in current_shard_data:
-                    logging.warning(
-                        f"Key '{key}' not found in shard {shard_file_path.name}. Will create empty tensor if needed.")
-                    # Ensure the key exists in aggregated_data if it's the first time seeing it
-                    if key not in aggregated_data: aggregated_data[key] = None
-                    continue  # Skip to next key for this shard
+        logging.info(f"\n--- Aggregating Part {part_num} ({len(current_part_shard_list)} shards) ---")
 
-                tensor_to_append = current_shard_data[key]
-                if not isinstance(tensor_to_append, torch.Tensor):
-                    logging.warning(
-                        f"Data for key '{key}' in shard {shard_file_path.name} is not a tensor (type: {type(tensor_to_append)}). Skipping.")
-                    continue
+        current_part_aggregated_data: Dict[str, Optional[torch.Tensor]] = {
+            "packet_seq": None, "label": None, "attention_mask": None,
+            **{col: None for col in categorical_columns_packets}
+        }
 
-                # If the tensor is empty (e.g. 0 sequences in this shard for this key), skip concatenation for this key
-                if tensor_to_append.numel() == 0:
-                    logging.debug(
-                        f"Key '{key}' in shard {shard_file_path.name} is an empty tensor. Skipping concatenation for this key.")
-                    if aggregated_data.get(key) is None:  # If main aggregate is also None, initialize it based on type
-                        if key == "packet_seq":
-                            aggregated_data[key] = torch.empty((0, max_seq_len, num_numerical_features),
-                                                               dtype=torch.float32)
-                        elif key == "label":
-                            aggregated_data[key] = torch.empty((0,), dtype=torch.long)
-                        elif key == "attention_mask":
-                            aggregated_data[key] = torch.empty((0, max_seq_len), dtype=torch.float32)
-                        elif key in categorical_columns_packets:
-                            aggregated_data[key] = torch.empty((0, max_seq_len), dtype=torch.long)
-                    continue
+        for shard_in_part_idx, shard_file_path in enumerate(current_part_shard_list):
+            logging.info(
+                f"Part {part_num}: Processing shard {shard_in_part_idx + 1}/{len(current_part_shard_list)}: {shard_file_path.name}")
+            try:
+                current_shard_data = torch.load(shard_file_path, map_location='cpu')
 
-                if aggregated_data.get(key) is None or aggregated_data[
-                    key].numel() == 0:  # If first tensor or previous was empty
-                    aggregated_data[key] = tensor_to_append
-                else:
-                    try:
-                        aggregated_data[key] = torch.cat((aggregated_data[key], tensor_to_append), dim=0)
-                    except RuntimeError as e:
-                        logging.error(f"RuntimeError concatenating key '{key}' from shard {shard_file_path.name}: {e}. "
-                                      f"Aggregated shape: {aggregated_data[key].shape}, Shard tensor shape: {tensor_to_append.shape}",
-                                      exc_info=True)
-                        # Optionally, decide how to handle this (e.g., skip this tensor, re-initialize key)
-                        # For now, we'll let it error out or try to continue if other keys are fine
+                for key in expected_keys_in_shard:
+                    if key not in current_shard_data:
+                        logging.warning(f"Key '{key}' not in shard {shard_file_path.name} for part {part_num}.")
+                        if current_part_aggregated_data.get(key) is None:  # Initialize if not already
+                            if key == "packet_seq":
+                                current_part_aggregated_data[key] = torch.empty(
+                                    (0, max_seq_len, num_numerical_features), dtype=torch.float32)
+                            elif key == "label":
+                                current_part_aggregated_data[key] = torch.empty((0,), dtype=torch.long)
+                            elif key == "attention_mask":
+                                current_part_aggregated_data[key] = torch.empty((0, max_seq_len), dtype=torch.float32)
+                            elif key in categorical_columns_packets:
+                                current_part_aggregated_data[key] = torch.empty((0, max_seq_len), dtype=torch.long)
                         continue
 
-            del current_shard_data  # Crucial: free memory of the loaded shard
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()  # Clear CUDA cache if tensors were inadvertently moved/copied
+                    tensor_to_append = current_shard_data[key]
+                    if not isinstance(tensor_to_append, torch.Tensor):
+                        logging.warning(f"Data for key '{key}' in shard {shard_file_path.name} not a tensor. Skipping.")
+                        continue
+                    if tensor_to_append.numel() == 0:
+                        logging.debug(f"Key '{key}' in shard {shard_file_path.name} is empty. Skipping concat.")
+                        if current_part_aggregated_data.get(key) is None:  # Initialize if not already for this part
+                            if key == "packet_seq":
+                                current_part_aggregated_data[key] = torch.empty(
+                                    (0, max_seq_len, num_numerical_features), dtype=torch.float32)
+                            elif key == "label":
+                                current_part_aggregated_data[key] = torch.empty((0,), dtype=torch.long)
+                            elif key == "attention_mask":
+                                current_part_aggregated_data[key] = torch.empty((0, max_seq_len), dtype=torch.float32)
+                            elif key in categorical_columns_packets:
+                                current_part_aggregated_data[key] = torch.empty((0, max_seq_len), dtype=torch.long)
+                        continue
 
-        except Exception as e:
-            logging.error(f"Error processing shard {shard_file_path.name} during aggregation: {e}", exc_info=True)
-            continue  # Continue to the next shard
+                    current_agg_tensor = current_part_aggregated_data.get(key)
+                    if current_agg_tensor is None or current_agg_tensor.numel() == 0:
+                        current_part_aggregated_data[key] = tensor_to_append
+                    else:
+                        try:
+                            current_part_aggregated_data[key] = torch.cat((current_agg_tensor, tensor_to_append), dim=0)
+                        except RuntimeError as e:
+                            logging.error(
+                                f"RuntimeError concatenating key '{key}' (Part {part_num}, Shard {shard_file_path.name}): {e}. Aggregated shape: {current_agg_tensor.shape}, Shard tensor shape: {tensor_to_append.shape}",
+                                exc_info=True)
+                            continue
 
-    # Final check and default empty tensor creation for any keys that remained None
-    # (e.g. if all shards were empty for a particular key)
-    num_total_sequences_final = 0
-    if aggregated_data.get("label") is not None and aggregated_data["label"].numel() > 0:
-        num_total_sequences_final = aggregated_data["label"].shape[0]
-    else:  # If label is None or empty, it means no valid sequences were aggregated
-        logging.warning("No valid 'label' data aggregated. Output might be empty or inconsistent.")
-        # Create empty tensors for all expected keys to ensure output file structure
-        aggregated_data["packet_seq"] = torch.empty((0, max_seq_len, num_numerical_features), dtype=torch.float32)
-        aggregated_data["label"] = torch.empty((0,), dtype=torch.long)
-        aggregated_data["attention_mask"] = torch.empty((0, max_seq_len), dtype=torch.float32)
-        for col in categorical_columns_packets:
-            aggregated_data[col] = torch.empty((0, max_seq_len), dtype=torch.long)
+                del current_shard_data
+                if torch.cuda.is_available(): torch.cuda.empty_cache()
 
-        # Save this empty structure and return
-        torch.save(aggregated_data, output_file)
-        logging.info(f"[DONE] Merged dataset (empty structure) saved to {output_file} as no valid data was aggregated.")
-        return
+            except Exception as e:
+                logging.error(f"Error processing shard {shard_file_path.name} for part {part_num}: {e}", exc_info=True)
+                continue
 
-    # Ensure all expected keys have a tensor, even if it's empty, based on num_total_sequences_final
-    if aggregated_data.get("packet_seq") is None or aggregated_data[
-        "packet_seq"].numel() == 0 and num_total_sequences_final > 0:
-        logging.warning(
-            f"Packet sequence data missing or empty post-aggregation, but {num_total_sequences_final} labels exist. Creating zeros.")
-        aggregated_data["packet_seq"] = torch.zeros((num_total_sequences_final, max_seq_len, num_numerical_features),
-                                                    dtype=torch.float32)
+        # Save the current aggregated part
+        current_part_output_filename = output_dir / f"{output_base_name}_part_{part_num}{output_suffix}"
+        num_sequences_in_part = 0
+        if current_part_aggregated_data.get("label") is not None and current_part_aggregated_data["label"].numel() > 0:
+            num_sequences_in_part = current_part_aggregated_data["label"].shape[0]
 
-    if aggregated_data.get("attention_mask") is None or aggregated_data[
-        "attention_mask"].numel() == 0 and num_total_sequences_final > 0:
-        logging.warning(
-            f"Attention mask data missing or empty post-aggregation, but {num_total_sequences_final} labels exist. Creating ones (or zeros based on policy).")
-        # Defaulting to ones, assuming valid sequences if labels exist. Adjust if padding should be indicated.
-        aggregated_data["attention_mask"] = torch.ones((num_total_sequences_final, max_seq_len), dtype=torch.float32)
+        if num_sequences_in_part == 0 and not any(
+                v is not None and v.numel() > 0 for v in current_part_aggregated_data.values()):
+            logging.info(f"Part {part_num} is empty (no sequences aggregated). Skipping save for this part.")
+        else:
+            # Ensure all keys are present in the dict to be saved for this part, even if empty
+            for key_check in expected_keys_in_shard:
+                if current_part_aggregated_data.get(key_check) is None:
+                    if key_check == "packet_seq":
+                        current_part_aggregated_data[key_check] = torch.empty((0, max_seq_len, num_numerical_features),
+                                                                              dtype=torch.float32)
+                    elif key_check == "label":
+                        current_part_aggregated_data[key_check] = torch.empty((0,), dtype=torch.long)
+                    elif key_check == "attention_mask":
+                        current_part_aggregated_data[key_check] = torch.empty((0, max_seq_len), dtype=torch.float32)
+                    elif key_check in categorical_columns_packets:
+                        current_part_aggregated_data[key_check] = torch.empty((0, max_seq_len), dtype=torch.long)
 
-    for col in categorical_columns_packets:
-        if aggregated_data.get(col) is None or aggregated_data[col].numel() == 0 and num_total_sequences_final > 0:
-            logging.warning(
-                f"Categorical data for '{col}' missing or empty post-aggregation, but {num_total_sequences_final} labels exist. Creating zeros.")
-            aggregated_data[col] = torch.zeros((num_total_sequences_final, max_seq_len), dtype=torch.long)
+            logging.info(
+                f"Saving aggregated part {part_num} to {current_part_output_filename} ({num_sequences_in_part} sequences).")
+            torch.save(current_part_aggregated_data, current_part_output_filename)
 
-    final_output_dict_to_save = {k: v for k, v in aggregated_data.items() if v is not None}
+        del current_part_aggregated_data  # Free memory for this part's data
+        if torch.cuda.is_available(): torch.cuda.empty_cache()
 
-    logging.info(f"Aggregation completed in {time.time() - aggregation_start_time:.2f}s.")
-    save_output_start_time = time.time()
-    torch.save(final_output_dict_to_save, output_file)
-    logging.info(f"[DONE] Merged dataset saved to {output_file} in {time.time() - save_output_start_time:.2f}s")
-
-    final_label_tensor = final_output_dict_to_save.get("label")
-    if final_label_tensor is not None and final_label_tensor.numel() > 0:
-        logging.info(f"   Total sequences in this output file: {final_label_tensor.shape[0]}")
-        try:
-            label_counts_np_final = np.bincount(final_label_tensor.cpu().numpy())
-            logging.info("Final Label distribution in this merged dataset:")
-            for lbl_id_report_final, cnt_report_final in enumerate(label_counts_np_final):
-                if cnt_report_final > 0:
-                    label_name_report_final = next((name_report for name_report, val_report in LABEL_MAPPING.items() if
-                                                    val_report == lbl_id_report_final), "Unknown")
-                    logging.info(
-                        f"  Class '{label_name_report_final}' ({lbl_id_report_final}): {cnt_report_final} sequences")
-        except Exception as e:
-            logging.error(f"Error reporting label distribution: {e}")
-    else:
-        logging.warning("No 'label' data in final output to report distribution or final output is empty.")
-
+    logging.info(
+        f"--- All parts aggregated and saved. Total time for aggregation: {time.time() - aggregation_start_time:.2f}s ---")
+    logging.info(f"Output part files are located in: {output_dir}")
     logging.info(f"--- create_packet_sequences Finished for this run ---")
 
 
 def find_label_from_path(file_path: str) -> int:
     current_path = Path(file_path).parent
-    # Make sure we don't go beyond the root or a sensible base for dataset structure
-    # This loop could be made safer if `dataset_dir` was passed and used as a stop condition.
-    # For now, relying on `current_path != current_path.parent`
     while current_path != current_path.parent:
         folder_name = current_path.name
         for key, value in LABEL_MAPPING.items():
-            if key.lower() in folder_name.lower():  # Case-insensitive match
+            if key.lower() in folder_name.lower():
                 return value
         current_path = current_path.parent
     return -1
