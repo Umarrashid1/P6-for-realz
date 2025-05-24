@@ -6,7 +6,7 @@ from pipeline.iot_flow_dataset import IoTFlowDataset   # Assuming this is your d
 from pathlib import Path
 import json
 
-CONFIG_FILE_PATH = Path("config.json")
+CONFIG_FILE_PATH = Path("../config.json")
 with open(CONFIG_FILE_PATH, 'r') as f:
     config = json.load(f)
 
