@@ -15,6 +15,7 @@ from sklearn.metrics import (
 from sklearn.utils.class_weight import compute_class_weight
 from torch.utils.data import DataLoader, WeightedRandomSampler
 import logging # Import logging
+from utils.train_utils import get_balanced_loss
 
 # Get a default logger for this module.
 # If the calling script configures the root logger, this might inherit some settings.
@@ -97,40 +98,7 @@ def _build_loaders(train_ds, val_ds, batch_size: int, sampler_on: bool, num_work
     return train_loader, val_loader
 
 
-# Modified to accept and use a logger
-def _balanced_loss(train_ds, device, logger: Optional[logging.Logger] = None) -> nn.CrossEntropyLoss:
-    if logger is None:
-        logger = module_logger
 
-    if len(train_ds) == 0:
-        logger.warning("Training dataset is empty for balanced loss. Using unweighted CrossEntropyLoss.")
-        return nn.CrossEntropyLoss()
-    try:
-        labels = [train_ds[i]["label"].item() for i in range(len(train_ds))]
-    except (KeyError, AttributeError) as e:
-        logger.warning(f"Could not extract labels for balanced loss ({e}). Using unweighted CrossEntropyLoss.")
-        return nn.CrossEntropyLoss()
-
-    if not labels:
-        logger.warning("No labels found in training dataset for balanced loss. Using unweighted CrossEntropyLoss.")
-        return nn.CrossEntropyLoss()
-
-    classes = np.unique(labels)
-    if len(classes) <= 1:
-        logger.warning("<= 1 class in training data for balanced loss. Using unweighted CrossEntropyLoss.")
-        return nn.CrossEntropyLoss()
-
-    try:
-        weights = compute_class_weight("balanced", classes=classes, y=labels)
-        weights_t = torch.tensor(weights, dtype=torch.float32, device=device)
-        logger.info(f"Using class‑balanced weights for classes {classes}: {np.round(weights, 3)}")
-        if not torch.isfinite(weights_t).all():
-            logger.warning("⚠ Non‑finite class weight detected. Using unweighted CrossEntropyLoss.")
-            return nn.CrossEntropyLoss()
-        return nn.CrossEntropyLoss(weight=weights_t)
-    except ValueError as e:
-        logger.warning(f"Could not compute class weights ({e}). Using unweighted CrossEntropyLoss.")
-        return nn.CrossEntropyLoss()
 
 
 # --- New Fine-tuning Function for Flows (Updated for logging) ---
@@ -162,7 +130,7 @@ def fine_tune_flow_model(
     optimizer = optim.AdamW(trainable_params, lr=lr)
     logger.info(f"Optimizer AdamW initialized with LR: {lr} for trainable parameters.")
 
-    criterion = _balanced_loss(train_dataset, device, logger=logger) # Pass logger
+    criterion = get_balanced_loss(device, "packet", logger=logger)
     train_loader, val_loader = _build_loaders(train_dataset, val_dataset, batch_size, use_weighted_sampler,
                                               num_workers=num_workers_loader, logger=logger) # Pass logger
 

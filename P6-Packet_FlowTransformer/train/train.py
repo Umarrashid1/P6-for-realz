@@ -15,9 +15,7 @@ from sklearn.metrics import (
 from sklearn.utils.class_weight import compute_class_weight
 from torch.utils.data import DataLoader, WeightedRandomSampler
 import logging  # Import logging
-
-# Project-specific imports (assuming it needs this, adjust if not)
-# from pipeline.config import categorical_columns_packets # This was in your original train.py
+from utils.train_utils import get_balanced_loss
 
 # Get a default logger for this module
 module_logger = logging.getLogger(__name__)
@@ -118,39 +116,6 @@ def _build_loaders(train_ds, val_ds, batch_size: int, sampler_on: bool, num_work
 
 
 # Modified to accept and use logger
-def _balanced_loss(train_ds, device, logger: Optional[logging.Logger] = None) -> nn.CrossEntropyLoss:
-    if logger is None:
-        logger = module_logger
-
-    if len(train_ds) == 0:  # Added check for empty train_ds
-        logger.warning("Training dataset is empty for balanced loss. Using unweighted CrossEntropyLoss.")
-        return nn.CrossEntropyLoss()
-
-    try:  # Added try-except for robustness
-        labels = [train_ds[i]["label"].item() for i in range(len(train_ds))]
-    except (KeyError, TypeError, AttributeError) as e:
-        logger.error(f"Error accessing labels for balanced loss: {e}. Using unweighted CrossEntropyLoss.",
-                     exc_info=True)
-        return nn.CrossEntropyLoss()
-
-    if not labels:  # Added check for empty labels list
-        logger.warning("No labels extracted for balanced loss computation. Using unweighted CrossEntropyLoss.")
-        return nn.CrossEntropyLoss()
-
-    classes = np.unique(labels)  # More robust way to get actual classes present
-    if len(classes) <= 1:  # Handle if only one class or no class variation
-        logger.warning(
-            f"Only {len(classes)} unique class(es) found in training data for balanced loss. Using unweighted CrossEntropyLoss.")
-        return nn.CrossEntropyLoss()
-
-    weights = compute_class_weight("balanced", classes=classes, y=labels)
-    weights_t = torch.tensor(weights, dtype=torch.float32, device=device)
-    logger.info(f"Using class‑balanced weights for classes {classes}: {np.round(weights_t.cpu().numpy(), 3)}")
-    if not torch.isfinite(weights_t).all():
-        logger.error(
-            "⚠ Non‑finite class weight detected — check label distribution! Using unweighted CrossEntropyLoss.")
-        return nn.CrossEntropyLoss()
-    return nn.CrossEntropyLoss(weight=weights_t)
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -186,7 +151,7 @@ def train_model(
 
     model.to(device)
     optimizer = optim.AdamW(model.parameters(), lr=lr)
-    criterion = _balanced_loss(train_dataset, device, logger=logger)
+    criterion = get_balanced_loss(device, "packet", logger=logger)
     train_loader, val_loader = _build_loaders(
         train_dataset, val_dataset, batch_size, use_weighted_sampler,
         num_workers=num_workers, logger=logger
