@@ -189,10 +189,11 @@ train_dataset, val_dataset, test_dataset = split_dataset_three_ways(
 # --- 4. Train Model ---
 logger.info("4. Starting model training...")
 try:
-    train_model( # Assuming train.py is updated for logger and num_workers
+    train_model(  # Assuming train.py is updated for logger and num_workers
         model,
         train_dataset,
         val_dataset,
+        categorical_columns=categorical_columns_packets,  # Add this line
         epochs=EPOCHS_PRETRAIN,
         batch_size=BATCH_SIZE_PRETRAIN,
         lr=LR_PRETRAIN,
@@ -200,8 +201,8 @@ try:
         clip_grad=CLIP_GRAD_PRETRAIN,
         use_weighted_sampler=USE_WEIGHTED_SAMPLER_PRETRAIN,
         save_dir=str(PACKET_MODEL_SAVE_DIR),
-        logger=logger,                 # Pass the logger
-        num_workers=NUM_WORKERS_LOADER # Pass num_workers
+        logger=logger,
+        num_workers=NUM_WORKERS_LOADER
     )
     logger.info("   ✅ Model training completed.")
 except Exception as e:
@@ -218,13 +219,14 @@ try:
     else:
         model_path_to_test = str(best_model_path_pretrain)
 
-    test_model( # Assuming train.py is updated for logger
+    test_model(
         model,
         test_dataset,
+        categorical_columns=categorical_columns_packets,
         batch_size=BATCH_SIZE_PRETRAIN,
         device=DEVICE,
         model_path=model_path_to_test,
-        logger=logger                  # Pass the logger
+        logger=logger
     )
     logger.info("   ✅ Model testing completed.")
 except Exception as e:
