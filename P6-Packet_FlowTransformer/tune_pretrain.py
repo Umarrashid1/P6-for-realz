@@ -114,7 +114,7 @@ def objective_pretrain(trial: optuna.trial.Trial):
                                    base_transformer_body_cfg['num_layers'] + 1)
     dropout_transformer_body = trial.suggest_float("dropout_transformer_body", 0.05, 0.3)
 
-    epochs_pretrain = MAIN_CONFIG['training_params']['pre_training_packet']['epochs']
+    epochs_pretrain = MAIN_CONFIG['optuna_params']['optuna_epochs_pretrain']
 
     objective_logger.info(f"Trial {trial.number} Hyperparameters: LR={lr:.2e}, BatchSize={batch_size}, "
                           f"d_model={d_model}, num_heads={num_heads}, num_layers={num_layers}, "

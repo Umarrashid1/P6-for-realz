@@ -119,7 +119,7 @@ def objective_finetune(trial: optuna.trial.Trial):
     batch_size_flow = trial.suggest_categorical("batch_size_flow", [32, 64, 128])
     classifier_dropout_flow = trial.suggest_float("classifier_dropout_flow", 0.05, 0.5)
 
-    epochs_finetune = MAIN_CONFIG['training_params']['fine_tuning_flow']['epochs']
+    epochs_finetune = MAIN_CONFIG['optuna_params']['optuna_epochs_finetune']
     clip_grad_finetune = MAIN_CONFIG['training_params']['fine_tuning_flow'].get('clip_grad', 1.0)
 
     objective_logger.info(f"Trial {trial.number} Hyperparameters: LR={lr_finetune:.2e}, BatchSize={batch_size_flow}, "

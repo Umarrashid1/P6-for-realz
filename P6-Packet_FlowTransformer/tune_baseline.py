@@ -131,7 +131,7 @@ def objective_baseline_flow(trial: optuna.trial.Trial):
     dropout_transformer_body = trial.suggest_float("dropout_transformer_body", 0.05, 0.3)
     classifier_dropout = trial.suggest_float("classifier_dropout_flow", 0.05, 0.5)
 
-    epochs_baseline_flow = MAIN_CONFIG['training_params']['baseline_flow_only']['epochs']
+    epochs_baseline_flow = MAIN_CONFIG['optuna_params']['optuna_epochs_baseline_flow']
     clip_grad_baseline_flow = MAIN_CONFIG['training_params']['baseline_flow_only'].get('clip_grad', 1.0)
 
     objective_logger.info(f"Trial {trial.number} Hyperparameters: LR={lr:.2e}, BatchSize={batch_size}, "

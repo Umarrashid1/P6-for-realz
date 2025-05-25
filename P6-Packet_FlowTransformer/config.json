@@ -20,21 +20,21 @@
   },
   "training_params": {
     "pre_training_packet": {
-      "epochs": 10,
+      "epochs": 5, // Epochs for running pretrain.py directly
       "lr": 3e-4,
       "batch_size": 64,
       "clip_grad": 1.0,
       "use_weighted_sampler": false
     },
     "fine_tuning_flow": {
-      "epochs": 10,
+      "epochs": 10, // Epochs for running finetune.py directly
       "lr": 5e-5,
       "batch_size": 64,
       "clip_grad": 1.0,
       "use_weighted_sampler": false
     },
     "baseline_flow_only": {
-      "epochs": 10,
+      "epochs": 10, // Epochs for running train_baseline_flow.py directly
       "lr": 5e-5,
       "batch_size": 64,
       "clip_grad": 1.0,
@@ -64,6 +64,9 @@
   "optuna_params": {
     "n_trials_pretrain": 50,
     "n_trials_finetune": 30,
-    "n_trials_baseline_flow": 30
+    "n_trials_baseline_flow": 30,
+    "optuna_epochs_pretrain": 5,
+    "optuna_epochs_finetune": 5,
+    "optuna_epochs_baseline_flow": 5
   }
 }
