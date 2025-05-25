@@ -20,7 +20,7 @@
   },
   "training_params": {
     "pre_training_packet": {
-      "epochs": 5,
+      "epochs": 10,
       "lr": 3e-4,
       "batch_size": 64,
       "clip_grad": 1.0,
