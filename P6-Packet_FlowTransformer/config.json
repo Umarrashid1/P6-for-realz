@@ -20,21 +20,21 @@
   },
   "training_params": {
     "pre_training_packet": {
-      "epochs": 5, // Epochs for running pretrain.py directly
+      "epochs": 5,
       "lr": 3e-4,
       "batch_size": 64,
       "clip_grad": 1.0,
       "use_weighted_sampler": false
     },
     "fine_tuning_flow": {
-      "epochs": 10, // Epochs for running finetune.py directly
+      "epochs": 10,
       "lr": 5e-5,
       "batch_size": 64,
       "clip_grad": 1.0,
       "use_weighted_sampler": false
     },
     "baseline_flow_only": {
-      "epochs": 10, // Epochs for running train_baseline_flow.py directly
+      "epochs": 10,
       "lr": 5e-5,
       "batch_size": 64,
       "clip_grad": 1.0,
