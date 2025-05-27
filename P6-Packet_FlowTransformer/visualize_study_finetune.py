@@ -2,7 +2,6 @@ import optuna
 import os
 import plotly  # Optuna's visualization typically uses Plotly
 
-# import sklearn # sklearn was not directly used
 
 # Ensure the directory for saving plots exists
 output_dir = "optuna_visualizations_finetune"  # CHANGED for fine-tune study
