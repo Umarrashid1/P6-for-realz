@@ -130,8 +130,8 @@ def fine_tune_flow_model(
     optimizer = optim.AdamW(trainable_params, lr=lr)
     logger.info(f"Optimizer AdamW initialized with LR: {lr} for trainable parameters.")
 
-    #criterion = get_balanced_loss(device, "packet", logger=logger)
-    criterion = nn.CrossEntropyLoss()  # Using standard CrossEntropyLoss
+    criterion = get_balanced_loss(device, "packet", logger=logger)
+    #criterion = nn.CrossEntropyLoss()  # Using standard CrossEntropyLoss
     train_loader, val_loader = _build_loaders(train_dataset, val_dataset, batch_size, use_weighted_sampler,
                                               num_workers=num_workers_loader, logger=logger) # Pass logger
 
