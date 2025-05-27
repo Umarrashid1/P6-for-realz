@@ -31,7 +31,7 @@
       "lr": 2.68e-4,
       "batch_size": 32,
       "clip_grad": 1.0,
-      "use_weighted_sampler": true
+      "use_weighted_sampler": false
     },
     "baseline_flow_only": {
       "epochs": 10,
