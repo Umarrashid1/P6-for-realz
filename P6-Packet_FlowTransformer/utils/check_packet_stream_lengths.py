@@ -20,7 +20,7 @@ except ImportError:
 # It's assumed this script is in the 'utils' directory,
 # so '..' navigates up to P6-Packet_FlowTransformer, then into the dataset.
 DEFAULT_DATASET_DIR = "../../../dataset/raw_dataset"
-STREAM_COLUMN_NAME = "stream"  # Column name identifying packet streams
+STREAM_COLUMN_NAME = "stream"
 LOG_FILE_NAME = "packet_stream_length_analysis.log"
 
 # --- Setup Logging ---
@@ -198,8 +198,8 @@ if __name__ == "__main__":
         stream_lengths_data = analyze_packet_stream_lengths(
             dataset_dir=dataset_path,
             stream_col_name=STREAM_COLUMN_NAME,
-            test_mode=False, # Set to True for a quick test on a subset of rows
-            rows_per_file=0 # Set to e.g. 10000 if test_mode=True for faster testing
+            test_mode=False,
+            rows_per_file=0
         )
         print_statistics(stream_lengths_data)
         logger.info(f"Analysis complete. Log saved to {LOG_FILE_NAME}")

@@ -231,7 +231,7 @@ def create_quartered_subset():
                 aggregated_quartered_data[key_check] = torch.zeros((num_total_sequences_final, max_s_len_for_shards),
                                                                    dtype=torch.long)
 
-    # MODIFIED: Variable name updated
+
     final_output_dict_to_save = {k: v for k, v in aggregated_quartered_data.items() if v is not None}
 
     logging.info(f"Final subset (1/4) aggregation completed in {time.time() - aggregation_start_time:.2f}s.")
@@ -264,5 +264,5 @@ if __name__ == '__main__':
         logging.error(f"Unhandled exception: {e}", exc_info=True)
         raise
 
-    logging.info("--- Script execution finished from __main__ ---")
+    logging.info(" Script execution finished from __main__ ")
     print(f"DEBUG: Script __main__ finished.", flush=True)

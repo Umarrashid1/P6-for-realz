@@ -272,7 +272,7 @@ def test_flow_model(
     elif model_path:
         logger.warning(f"Specified model_path '{model_path}' not found. Using model currently in memory.")
 
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0) # num_workers for test can also be from config
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
 
     model.to(device)
     model.eval()

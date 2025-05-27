@@ -1,6 +1,6 @@
 import pandas as pd
 from pathlib import Path
-import numpy as np  # For np.nan handling if needed, though pandas handles it well.
+import numpy as np
 
 
 numerical_columns = [
@@ -25,9 +25,7 @@ numerical_columns = [
     'var_e', 'q1_e', 'sum_p', 'min_p', 'max_p', 'med_p', 'average_p', 'var_p', 'q3_p', 'q1_p', 'iqr_p', 'l3_ip_dst_count'
 ]
 
-BASE_DIR = Path(__file__).resolve().parent  # Assumes script is in some project root
-# Or define it absolutely if running from an arbitrary location:
-# BASE_DIR = Path("/path/to/your/project_root_or_where_script_is")
+BASE_DIR = Path(__file__).resolve().parent
 
 DATASET_DIR = BASE_DIR / "../../../dataset/raw_dataset"
 OUTPUT_DIR = BASE_DIR / "../../../dataset/standardized_dataset"
@@ -67,7 +65,7 @@ for i, file_path in enumerate(input_files):
         all_numerical_data.append(df_chunk)
     except Exception as e:
         print(f"    Error reading {file_path}: {e}. Skipping this file for stats calculation.")
-        # You might want to handle this more robustly, e.g., by trying different encodings or logging errors.
+
 
 if not all_numerical_data:
     print("No data could be read from any CSV files. Exiting.")
@@ -86,11 +84,9 @@ for col in numerical_columns:
         print(f"  Median for '{col}': {global_medians[col]}")
     else:
         print(f"  Warning: Column '{col}' not found in concatenated data. Cannot calculate median.")
-        # Decide how to handle this: error, skip, or use a default (e.g., 0)
-        # For now, it will lead to an error later if we try to access global_medians[col]
-        # and the column was missing everywhere.
 
-# Impute missing values in the concatenated DataFrame using global medians (for accurate mean/std)
+
+# Impute missing values in the concatenated DataFrame using global medians
 print("\nImputing missing values globally before calculating mean/std...")
 for col in numerical_columns:
     if col in global_df.columns and col in global_medians:
@@ -111,14 +107,14 @@ for col in numerical_columns:
     if col in global_df.columns:
         global_means[col] = global_df[col].mean()
         global_stds[col] = global_df[col].std()
-        # Handle cases where standard deviation might be zero (e.g., constant column after imputation)
+        # Handle cases where standard deviation might be zero
         if global_stds[col] == 0:
             print(f"  Warning: Standard deviation for '{col}' is 0. Standardized values will be 0.")
         print(f"  Mean for '{col}': {global_means[col]}, Std for '{col}': {global_stds[col]}")
     else:
         print(f"  Warning: Column '{col}' not found. Cannot calculate mean/std.")
 
-# Phase 2: Apply transformations and save files
+# Apply transformations and save files
 print("\nPhase 2: Applying transformations and saving files...")
 
 for i, original_file_path in enumerate(input_files):
@@ -140,7 +136,7 @@ for i, original_file_path in enumerate(input_files):
         for col in numerical_columns:
             if col in df_to_transform.columns:
                 processed_cols_in_file.append(col)
-                # 1. Impute missing values using pre-calculated global medians
+                # Impute missing values using pre-calculated global medians
                 if col in global_medians:
                     nan_count_before = df_to_transform[col].isnull().sum()
                     df_to_transform[col] = df_to_transform[col].fillna(global_medians[col])
@@ -148,8 +144,7 @@ for i, original_file_path in enumerate(input_files):
                         # print(f"    Imputed NaNs in '{col}' using median {global_medians[col]}")
                         pass  # Reduce verbosity here, already logged globally
                 else:
-                    # This case should ideally not happen if the column was in numerical_columns
-                    # and present in at least one file during Phase 1.
+
                     print(
                         f"    Warning: Global median not found for '{col}'. NaNs might persist or cause errors if not handled.")
 
@@ -164,8 +159,7 @@ for i, original_file_path in enumerate(input_files):
                 else:
                     print(f"    Warning: Global mean/std not found for '{col}'. Cannot standardize.")
             else:
-                # This can happen if a numerical column listed in config is not in THIS specific file
-                # print(f"    Column '{col}' not found in {original_file_path.name}. Skipping.")
+
                 pass
 
         # Save the transformed DataFrame

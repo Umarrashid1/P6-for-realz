@@ -15,7 +15,7 @@ from utils import category_mapping
 
 # ── Set up timestamp and logging ──────────────────────────────────────────
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-LOG_FILE = f"preprocessing_flows_{timestamp}.log"  # Changed log file name
+LOG_FILE = f"preprocessing_flows_{timestamp}.log"
 
 logging.basicConfig(
     filename=LOG_FILE,
@@ -55,7 +55,7 @@ def process_single_flow_file(args: Tuple[pd.DataFrame, str]) -> Tuple[
     Returns numerical data, categorical data, and labels as NumPy arrays/lists.
     """
     df, file_path = args
-    # Assuming one label per file for simplicity, as in the original script
+
     label = find_label_from_path(file_path)
     if label == -1:
         # logging.warning(f"[SKIP FILE] No label for: {file_path}") # Reduced logging
@@ -83,7 +83,7 @@ def process_single_flow_file(args: Tuple[pd.DataFrame, str]) -> Tuple[
             df_processed[col] = df_processed[col].clip(lower=CLIP_LOW[col], upper=CLIP_HIGH[col])
             df_processed[col] = df_processed[col].fillna(GLOBAL_MEDIAN[col])
             df_processed[col] = (df_processed[col] - GLOBAL_MEAN[col]) / (GLOBAL_STD[col] + EPS)
-        else:  # Should not happen due to missing_cols check, but as safety
+        else:
             logging.error(f"Numerical column '{col}' missing during processing for {file_path}.")
             return file_path, None, None, None
 
@@ -102,18 +102,16 @@ def process_single_flow_file(args: Tuple[pd.DataFrame, str]) -> Tuple[
                     continue
 
                 mapping = cat_mappings[col]
-                # Determine unknown_id carefully based on how load_mappings returns keys
+                # Determine unknown_id based on how load_mappings returns keys
                 unknown_id = mapping.get("unknown",
                                          mapping.get(repr("unknown")))  # Try string "unknown" then repr("unknown")
                 if unknown_id is None:  # Fallback if "unknown" not in map
                     # logging.warning(f"'unknown' not in mapping for {col}. Using 0 for unmapped.")
                     unknown_id = 0
 
-                # Original script used .apply(lambda x: mapping.get(x, unknown_id))
-                # This assumes keys in mapping are the original values.
                 # load_mappings from your util returns original values as keys.
                 df_processed[col] = df_processed[col].apply(lambda x: mapping.get(x, unknown_id)).astype(int)
-            else:  # Should not happen
+            else:
                 logging.error(f"Categorical column '{col}' missing during processing for {file_path}.")
                 return file_path, None, None, None
 
@@ -139,13 +137,11 @@ def preprocess_flow_vectors_from_csvs(  # Renamed main function
         output_file: str,
         test_mode: bool = False,
         rows_per_file: int = 20000,
-        # max_seq_len no longer needed
 ):
-    all_files = io_utils.list_csv_files(dataset_dir)  # Assuming recursive
+    all_files = io_utils.list_csv_files(dataset_dir)
     logging.info(f"[START] Found {len(all_files)} CSV files for flow vector processing.")
 
-    # Checkpoint logic: saves processed data from each file
-    # Filename for checkpoint will be like 'somefile_flow_shard.pt'
+
     pending_files = [f for f in all_files if not (CHECKPOINT_DIR / (Path(f).stem + "_flow_shard.pt")).exists()]
     if len(pending_files) < len(all_files):
         logging.info(
@@ -166,7 +162,6 @@ def preprocess_flow_vectors_from_csvs(  # Renamed main function
         raise RuntimeError("No CSV files could be loaded and no flow checkpoints found.")
 
     # Process DataFrames in parallel
-    # process_single_flow_file is CPU bound (standardization, mapping)
     with concurrent.futures.ProcessPoolExecutor(max_workers=os.cpu_count() or 1) as ppool:
         # args for process_single_flow_file are (df, file_path)
         futures = [ppool.submit(process_single_flow_file, df_path_tuple) for df_path_tuple in loaded_dfs_with_paths]
@@ -225,7 +220,7 @@ def preprocess_flow_vectors_from_csvs(  # Renamed main function
         "numerical_features": final_numerical_data,
         "categorical_features": final_categorical_data,
         "label": final_labels,
-        "metadata": {  # Add some basic metadata
+        "metadata": { 
             "source_dataset_dir": dataset_dir,
             "creation_timestamp": timestamp,
             "numerical_columns_used": numerical_columns_flows,

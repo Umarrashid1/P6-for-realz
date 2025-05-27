@@ -360,5 +360,3 @@ if __name__ == "__main__":
         for key, value in study_finetune.best_params.items(): script_logger.info(f"  {key}: {value}")
     else:
         script_logger.info("No successful trials completed in this fine-tuning study session.")
-    script_logger.info("\nNext steps: Update config.json with these best fine-tuning params, "
-                       "then run finetune.py to train and save the final best fine-tuned model.")

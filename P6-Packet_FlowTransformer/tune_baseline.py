@@ -11,14 +11,13 @@ import numpy as np
 import logging
 import os
 import sys
-# REMOVE: from collections import Counter # No longer needed here
-# REMOVE: from sklearn.utils.class_weight import compute_class_weight # No longer needed here
 
-# --- Project-specific Imports ---
+
+# Project-specific Imports
 from pipeline.iot_flow_dataset import IoTFlowDataset
 from models.flow_finetuning_model import FlowFineTuningModel
 
-# --- Configuration & Basic Setup ---
+# Configuration and Basic Setup
 CONFIG_FILE_PATH = Path("config.json")
 LOG_FILE_OPTUNA_BASELINE_FLOW = "optuna_baseline_flow_log.txt"
 
@@ -48,7 +47,7 @@ def load_main_config(config_path):
     return config
 
 
-# --- Global Variables (Loaded Once) ---
+# Global Variables
 MAIN_CONFIG = load_main_config(CONFIG_FILE_PATH)
 DEVICE = MAIN_CONFIG['general_settings']['device']
 if DEVICE == "cuda" and not torch.cuda.is_available():
@@ -58,7 +57,7 @@ script_logger.info(f"Using device: {DEVICE}")
 
 PROCESSED_FLOW_DATA_PATH = Path(MAIN_CONFIG['dataset_paths']['processed_flow_pt'])
 
-# --- Load Pre-calculated Class Weights (NEW) ---
+#  Load Pre-calculated Class Weights
 WEIGHTS_DIR = Path(MAIN_CONFIG['dataset_paths']['raw_packet_dir']).parent / "weights"
 FLOW_WEIGHTS_PATH = WEIGHTS_DIR / "flow_class_weights.pt"
 PRECOMPUTED_FLOW_WEIGHTS = None
@@ -67,8 +66,8 @@ try:
     script_logger.info(f"Successfully loaded precomputed flow weights from {FLOW_WEIGHTS_PATH}")
 except FileNotFoundError:
     script_logger.error(
-        f"ERROR: Precomputed flow weights file not found at {FLOW_WEIGHTS_PATH}. Please run calculate_global_weights.py first. Exiting.")
-    sys.exit(1)  # Exit if weights are essential and not found
+        f"ERROR: Precomputed flow weights file not found at {FLOW_WEIGHTS_PATH}. run calculate_global_weights.py first. Exiting.")
+    sys.exit(1)
 except Exception as e:
     script_logger.error(f"ERROR: Could not load flow weights from {FLOW_WEIGHTS_PATH}: {e}. Exiting.", exc_info=True)
     sys.exit(1)
@@ -88,7 +87,7 @@ def get_balanced_loss_criterion(device, precomputed_weights_tensor, logger_insta
             logger_instance.warning("Precomputed weights for flow contain NaN/Inf. Using unweighted CrossEntropyLoss.")
             return nn.CrossEntropyLoss()
     else:
-        # This case should ideally not be reached if we exit on PRECOMPUTED_FLOW_WEIGHTS load failure
+
         logger_instance.warning("Precomputed weights for flow not available. Using unweighted CrossEntropyLoss.")
         return nn.CrossEntropyLoss()
 
@@ -149,7 +148,7 @@ def objective_baseline_flow(trial: optuna.trial.Trial):
     total_size = len(FULL_FLOW_DATASET)
     val_size = int(total_size * val_ratio)
     if total_size * (1 - val_ratio - test_ratio_dummy) <= 0:
-        train_size = max(1, int(total_size * 0.7));
+        train_size = max(1, int(total_size * 0.7))
         val_size = max(1, int(total_size * 0.15))
         dummy_test_size = total_size - train_size - val_size
         if dummy_test_size < 0: dummy_test_size = 0
@@ -162,7 +161,7 @@ def objective_baseline_flow(trial: optuna.trial.Trial):
         return -float('inf')
 
     generator = torch.Generator().manual_seed(MAIN_CONFIG['general_settings']['random_seed'])
-    # IMPORTANT: We do not need train_dataset for criterion anymore if weights are precomputed globally
+
     _, val_dataset, _ = random_split(FULL_FLOW_DATASET, [train_size, val_size, dummy_test_size], generator=generator)
 
     # Create a new train_dataset for the DataLoader, Optuna doesn't need access to its labels for criterion
@@ -194,7 +193,7 @@ def objective_baseline_flow(trial: optuna.trial.Trial):
     model.to(DEVICE)
 
     optimizer = optim.AdamW(model.parameters(), lr=lr)
-    # Use the new function with precomputed weights
+
     criterion = get_balanced_loss_criterion(DEVICE, PRECOMPUTED_FLOW_WEIGHTS, logger_instance=objective_logger)
 
     best_val_macro_f1_for_trial = -1.0
@@ -340,7 +339,7 @@ if __name__ == "__main__":
 
     study_baseline_flow.optimize(objective_baseline_flow, n_trials=N_TRIALS_BASELINE_FLOW)
 
-    script_logger.info("\n--- Optuna Flow-Only Baseline Study Complete ---")
+    script_logger.info("\nOptuna Flow-Only Baseline Study Complete")
     if study_baseline_flow.best_trial:
         script_logger.info(f"Best trial number: {study_baseline_flow.best_trial.number}")
         script_logger.info(f"Best validation macro F1-score (baseline flow): {study_baseline_flow.best_value:.4f}")

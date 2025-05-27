@@ -48,7 +48,7 @@ for root, _, files in os.walk(DATASET_DIR):
         except Exception as e:
             summary.append({"file": file_path, "error": str(e)})
 
-# Print summary
+
 print("\n==== CSV FILE CHECK SUMMARY ====")
 for s in summary:
     if "error" in s:

@@ -149,7 +149,6 @@ try:
 except FileNotFoundError:
     print(
         f"Error: The study database file '{study_name}.db' was not found. Please ensure it exists in the current working directory.")
-except ModuleNotFoundError:
-    print("Error: Optuna or Plotly might not be installed. Please install them (e.g., 'pip install optuna plotly').")
+
 except Exception as e:
     print(f"An error occurred: {e}")

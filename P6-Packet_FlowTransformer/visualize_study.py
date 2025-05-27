@@ -3,7 +3,7 @@ import os
 import plotly  # Optuna's visualization typically uses Plotly
 import sklearn
 
-# Ensure the directory for saving plots exists
+
 output_dir = "optuna_visualizations_finetune"
 os.makedirs(output_dir, exist_ok=True)
 
@@ -17,20 +17,18 @@ try:
     if not study.trials:
         print("The study has no trials. Cannot generate visualizations or print data.")
     else:
-        # === ADDED DATA EXTRACTION LINES START ===
-        print("\n--- All Trial Data (from study.trials_dataframe()) ---")
+
+        print("\n All Trial Data (from study.trials_dataframe())")
         try:
-            # Using to_string() to get a string representation of the DataFrame
-            # This can be very verbose if there are many trials or many columns.
-            # You might adjust by selecting specific columns or using .head() if needed.
+
             print(study.trials_dataframe().to_string())
         except Exception as e:
             print(f"Could not print trials_dataframe: {e}")
 
-        print("\n--- Parameter Importances ---")
-        # Parameter importances can only be calculated if there are completed trials.
+        print("\n Parameter Importances ")
+
         completed_trials_for_importance = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
-        if len(completed_trials_for_importance) > 1: # Optuna typically needs at least 2 completed trials
+        if len(completed_trials_for_importance) > 1:
             try:
                 importances = optuna.importance.get_param_importances(study)
                 if importances:
@@ -44,9 +42,9 @@ try:
                 print(f"Could not calculate or print parameter importances: {e}")
         else:
             print("Not enough completed trials (need >1) to calculate parameter importances.")
-        # === ADDED DATA EXTRACTION LINES END ===
 
-        # Define the parameters that were tuned, matching names in your objective function
+
+        # Define the parameters that were tuned
         tuned_params = [
             "lr_pretrain",
             "batch_size_pretrain",
@@ -155,6 +153,6 @@ except FileNotFoundError:
         f"Error: The study database file '{study_name}.db' was not found. Please ensure the file exists in the current working directory or provide the correct path.")
 except ModuleNotFoundError:
     print(
-        "Error: Optuna or Plotly might not be installed in your Python environment. Please install them (e.g., 'pip install optuna plotly') and try again.")
+        "Error: Optuna or Plotly might not be installed in your Python environment. Please install them and try again.")
 except Exception as e:
     print(f"An error occurred: {e}")

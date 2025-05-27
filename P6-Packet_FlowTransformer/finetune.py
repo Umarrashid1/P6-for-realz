@@ -16,8 +16,8 @@ from train.train_flows import fine_tune_flow_model, test_flow_model  # Assumes t
 from utils.category_mapping import load_mappings  # For packet cat_sizes if needed for IoTTransformer
 from pipeline.config import categorical_columns_packets, numerical_columns_packets  # For IoTTransformer instantiation
 
-# --- 0. Load Central Configuration, Set Up Logger, and Set Seeds ---
-CONFIG_FILE_PATH = Path("config.json")  # Adjust path if your config is elsewhere
+# Load Central Configuration, Set Up Logger, and Set Seeds
+CONFIG_FILE_PATH = Path("config.json")
 
 if not CONFIG_FILE_PATH.is_file():
     print(f"❌ CRITICAL: Configuration file not found at {CONFIG_FILE_PATH}")
@@ -276,7 +276,7 @@ try:
     flow_finetuning_model_instance.to(DEVICE)
     logger.info("   ✅ FlowFineTuningModel instantiated.")
 
-    # Step 2c: Load pre-trained weights into the body and freeze it
+    # Load pre-trained weights into the body and freeze it
     if not PRETRAINED_PACKET_MODEL_WEIGHTS.is_file():
         logger.error(
             f"❌ Pretrained packet model weights not found at {PRETRAINED_PACKET_MODEL_WEIGHTS}. Cannot proceed with fine-tuning.")

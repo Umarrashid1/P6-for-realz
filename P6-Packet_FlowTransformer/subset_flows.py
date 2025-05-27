@@ -27,14 +27,14 @@ subset_fraction = 0.25 # Example: 10% subset
 # The 'train' part will be the larger remaining part, which we discard for this subset.
 _, subset_indices = train_test_split(
     indices,
-    test_size=subset_fraction, # This will be the size of our subset
-    stratify=labels.numpy(),   # Convert to numpy for stratify if it's a tensor
-    random_state=42          # For reproducibility
+    test_size=subset_fraction,
+    stratify=labels.numpy(),
+    random_state=42
 )
 
 print(f"Creating a {subset_fraction*100:.0f}% subset with {len(subset_indices)} samples.")
 
-# Create the new subset dictionary
+# Create the subset dictionary
 subset_data = {
     'numerical_features': full_data['numerical_features'][subset_indices],
     'categorical_features': full_data['categorical_features'][subset_indices],

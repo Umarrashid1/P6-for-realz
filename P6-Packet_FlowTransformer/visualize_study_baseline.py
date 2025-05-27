@@ -1,13 +1,11 @@
 import optuna
 import os
-import plotly  # Optuna's visualization typically uses Plotly
-# import sklearn # sklearn is not explicitly used by this script, optuna handles importance.
 
 # Ensure the directory for saving plots exists
 output_dir = "optuna_visualizations_baseline" # Changed output directory
 os.makedirs(output_dir, exist_ok=True)
 
-study_name = "baseline-flow-transformer-study"  # CHANGED for the baseline study
+study_name = "baseline-flow-transformer-study"
 storage_name = f"sqlite:///{study_name}.db"
 
 try:
@@ -134,7 +132,7 @@ try:
         else:
             print("Not enough parameters tuned to generate contour plots.")
 
-        # 6. Intermediate Values Plot
+        # Intermediate Values Plot
         try:
             fig_intermediate = optuna.visualization.plot_intermediate_values(study)
             intermediate_path = os.path.join(output_dir, "intermediate_values.html")
@@ -147,7 +145,5 @@ try:
 
 except FileNotFoundError:
     print(f"Error: The study database file '{study_name}.db' was not found. Please ensure it exists in the current working directory.")
-except ModuleNotFoundError:
-    print("Error: Optuna or Plotly might not be installed. Please install them (e.g., 'pip install optuna plotly').")
 except Exception as e:
     print(f"An error occurred: {e}")

@@ -30,7 +30,7 @@ logging.basicConfig(
 # ── FIXED Checkpoint directory ─────────────────────────
 CHECKPOINT_DIR = Path("checkpoints_packet_shards")
 CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-logging.info(f"Using FIXED checkpoint directory for this run: {CHECKPOINT_DIR.resolve()}")
+logging.info(f"Using checkpoint directory: {CHECKPOINT_DIR.resolve()}")
 
 # ── Load global numeric stats ─────────────────
 STD_STATS_PATH = "packet_standardization_stats.npz"
@@ -46,8 +46,8 @@ try:
     logging.info(f"Successfully loaded standardization stats from {STD_STATS_PATH}")
 except FileNotFoundError:
     logging.error(
-        f"CRITICAL: Standardization stats file not found at {STD_STATS_PATH}. Preprocessing cannot continue correctly.")
-    raise SystemExit(f"CRITICAL: Standardization stats file not found at {STD_STATS_PATH}")
+        f"Standardization stats file not found at {STD_STATS_PATH}. Preprocessing cannot continue correctly.")
+    raise SystemExit(f"Standardization stats file not found at {STD_STATS_PATH}")
 
 
 def process_fragment(args: Tuple[pd.DataFrame, str, int]) -> Tuple[
@@ -115,10 +115,8 @@ def process_fragment(args: Tuple[pd.DataFrame, str, int]) -> Tuple[
         mapping = cat_mappings.get(col_cat_proc)
         unknown_id = 0
         if mapping:
-            # Ensure "unknown" key is correctly retrieved (repr vs str)
-            # Assuming load_mappings stores keys as original values (str, int, float)
-            # and "unknown" is stored as the string "unknown"
-            unknown_id = mapping.get("unknown")  # Try direct string "unknown"
+
+            unknown_id = mapping.get("unknown")
             if unknown_id is None:  # Fallback if it was stored as repr("unknown") or other forms
                 unknown_id = mapping.get(repr("unknown"), 0)  # Default to 0 if not found
         else:
@@ -197,7 +195,7 @@ def process_fragment(args: Tuple[pd.DataFrame, str, int]) -> Tuple[
             num_slice = num_feat[start_idx:end_idx]
 
             # Ensure num_slice has 2 dimensions for padding
-            if num_slice.ndim == 1:  # Should not happen if numerical_columns_packets is not empty
+            if num_slice.ndim == 1:
                 num_slice = num_slice.reshape(-1, 1) if len(numerical_columns_packets) == 1 else num_slice.reshape(-1,
                                                                                                                    len(numerical_columns_packets))
 
@@ -292,6 +290,7 @@ def create_packet_sequences(
 
     processed_shards_this_run_count = 0
 
+    # Ensure the output directory exists
     for i in range(0, len(all_files_full_list), files_per_processing_batch):
         current_batch_file_paths = all_files_full_list[i:i + files_per_processing_batch]
         batch_number = (i // files_per_processing_batch) + 1
@@ -299,7 +298,7 @@ def create_packet_sequences(
                                                     len(all_files_full_list) + files_per_processing_batch - 1) // files_per_processing_batch
 
         logging.info(
-            f"\n--- Ensuring Shards Exist: Batch {batch_number}/{total_file_processing_batches} ({len(current_batch_file_paths)} files) ---")
+            f"\nEnsuring Shards Exist: Batch {batch_number}/{total_file_processing_batches} ({len(current_batch_file_paths)} files)")
 
         pending_files_in_batch_paths = []
         for fp_in_batch in current_batch_file_paths:
@@ -309,6 +308,7 @@ def create_packet_sequences(
                 continue
             pending_files_in_batch_paths.append(fp_in_batch)
 
+        # Check if there are any files that need processing in this batch
         if not pending_files_in_batch_paths:
             logging.info(f"[BATCH {batch_number}] All files in this batch already have shards.")
             continue
@@ -359,6 +359,7 @@ def create_packet_sequences(
         logging.info(f"[BATCH {batch_number}] Using {num_process_workers} process workers.")
 
         batch_results_list = []
+        # Process the fragments in parallel
         with concurrent.futures.ProcessPoolExecutor(max_workers=num_process_workers) as ppool:
             future_to_path_map_batch = {ppool.submit(process_fragment, arg_b): arg_b[1] for arg_b in proc_args_batch}
             for k_proc_b, future_proc_b in enumerate(concurrent.futures.as_completed(future_to_path_map_batch)):
@@ -421,9 +422,9 @@ def create_packet_sequences(
         batch_results_list.clear()
         logging.info(f"[BATCH {batch_number}] Cleared DataFrames and results from memory for this batch.")
         logging.info(
-            f"--- End of Batch {batch_number}/{total_file_processing_batches}. Total shards newly created in this run: {processed_shards_this_run_count} ---")
+            f" End of Batch {batch_number}/{total_file_processing_batches}. Total shards newly created in this run: {processed_shards_this_run_count} ")
 
-    logging.info(f"--- All input files processed. Shards are available in {CHECKPOINT_DIR} for aggregation. ---")
+    logging.info(f"All input files processed. Shards are available in {CHECKPOINT_DIR} for aggregation.")
 
     # --- Memory-Efficient Aggregation into Two Parts ---
     all_shard_files = sorted(CHECKPOINT_DIR.glob("*.pt"))
@@ -434,8 +435,9 @@ def create_packet_sequences(
         return
 
     logging.info(
-        f"\n--- Starting Memory-Efficient Aggregation from {total_shards_to_aggregate} Shard Files into Two Parts ---")
+        f"\nStarting Memory-Efficient Aggregation from {total_shards_to_aggregate} Shard Files into Two Parts.")
     aggregation_start_time = time.time()
+
 
     output_file_path_obj = Path(output_file)
     output_base_name = output_file_path_obj.stem
@@ -455,25 +457,26 @@ def create_packet_sequences(
     expected_keys_in_shard = ["packet_seq", "label", "attention_mask"] + categorical_columns_packets
     num_numerical_features = len(numerical_columns_packets)
 
+    # Ensure max_seq_len is defined
     for part_idx, current_part_shard_list in enumerate(part_files_to_process):
         part_num = part_idx + 1
         if not current_part_shard_list:
             logging.info(f"No shards to process for part {part_num}. Skipping.")
             continue
 
-        logging.info(f"\n--- Aggregating Part {part_num} ({len(current_part_shard_list)} shards) ---")
+        logging.info(f"\nAggregating Part {part_num} ({len(current_part_shard_list)} shards)")
 
         current_part_aggregated_data: Dict[str, Optional[torch.Tensor]] = {
             "packet_seq": None, "label": None, "attention_mask": None,
             **{col: None for col in categorical_columns_packets}
         }
-
+        # Initialize empty tensors for each expected key
         for shard_in_part_idx, shard_file_path in enumerate(current_part_shard_list):
             logging.info(
                 f"Part {part_num}: Processing shard {shard_in_part_idx + 1}/{len(current_part_shard_list)}: {shard_file_path.name}")
             try:
                 current_shard_data = torch.load(shard_file_path, map_location='cpu')
-
+                # Check if all expected keys are present in the shard
                 for key in expected_keys_in_shard:
                     if key not in current_shard_data:
                         logging.warning(f"Key '{key}' not in shard {shard_file_path.name} for part {part_num}.")
@@ -553,7 +556,7 @@ def create_packet_sequences(
                 f"Saving aggregated part {part_num} to {current_part_output_filename} ({num_sequences_in_part} sequences).")
             torch.save(current_part_aggregated_data, current_part_output_filename)
 
-        del current_part_aggregated_data  # Free memory for this part's data
+        del current_part_aggregated_data  # Free memory after saving
         if torch.cuda.is_available(): torch.cuda.empty_cache()
 
     logging.info(

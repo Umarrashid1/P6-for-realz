@@ -29,8 +29,8 @@ with open(CONFIG_FILE_PATH, 'r') as f:
 print(f"✅ Central configuration loaded from {CONFIG_FILE_PATH}")
 
 
-# --- >>>> NEW LOGGING SETUP <<<< ---
-# Get log file path from config, or define a default
+
+# Logging Setup
 log_paths_config = config.get('paths', {})
 LOG_FILE_NAME = log_paths_config.get('baseline_flow_only_log_file', 'training_baseline_flow_only.log')
 LOG_DIR = Path(log_paths_config.get('log_dir', 'logs'))
@@ -57,18 +57,15 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 if torch.cuda.is_available():
     torch.cuda.manual_seed(SEED)
-    torch.cuda.manual_seed_all(SEED) # if using multi-GPU
-    # Optional: For more determinism
-    # torch.backends.cudnn.deterministic = True
-    # torch.backends.cudnn.benchmark = False
-logger.info(f"🌱 Random seed set to: {SEED}")
+    torch.cuda.manual_seed_all(SEED)
+logger.info(f" Random seed set to: {SEED}")
 
 
 # --- Helper Functions ---
 # Modified to accept and use a logger
 def split_dataset_three_ways(dataset, val_ratio=0.1, test_ratio=0.1, logger_instance=None):
     if logger_instance is None:
-        logger_instance = logger # Fallback to the script's main logger if none passed
+        logger_instance = logger
 
     total_size = len(dataset)
     val_size = int(total_size * val_ratio)
@@ -210,10 +207,10 @@ best_model_path = BASELINE_MODEL_SAVE_DIR / "model_flow_best.pt"
 test_flow_model(
     model=flow_only_baseline_model,
     test_dataset=test_flow_dataset,
-    batch_size=BATCH_SIZE_FLOW, # You might want a separate test_batch_size in config
+    batch_size=BATCH_SIZE_FLOW,
     device=DEVICE,
     model_path=str(best_model_path) if best_model_path.exists() else None,
-    logger=logger  # <<<< PASS THE LOGGER
+    logger=logger
 )
 
 logger.info("🏁 Flow-only baseline training script (with central config & logging) finished. 🏁")

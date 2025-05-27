@@ -13,7 +13,7 @@ from pipeline.config import numerical_columns_packets, categorical_columns_packe
 
 file_path = "../../dataset/raw_dataset/DatasetAnomaly/Web-Based/Backdoor_Malware/Backdoor_Malware.csv"
 
-# --- 1. Configure Logging ---
+# Configure Logging
 logging.basicConfig(filename='gan_script_pytorch.log',
                     level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -156,7 +156,7 @@ class Discriminator(nn.Module):
             nn.LeakyReLU(0.2, inplace=True),
 
             nn.Linear(256 if input_dim < 512 else 512, 1),
-            nn.Sigmoid()  # Output probability (real/fake)
+            nn.Sigmoid()
         )
         logging.info("Discriminator model built.")
 
@@ -184,13 +184,13 @@ for epoch in range(epochs):
     for i in range(real_training_data.size(0) // batch_size):  # Iterate over batches
         # --- Train Discriminator ---
         discriminator.train()
-        generator.eval()  # Keep generator in eval mode while training discriminator
+        generator.eval()
         optimizer_D.zero_grad()
 
         # Real samples
-        idx = torch.randperm(real_training_data.size(0))[:batch_size]  # More robust batch selection
+        idx = torch.randperm(real_training_data.size(0))[:batch_size]
         real_samples = real_training_data[idx].to(device)
-        real_labels = torch.full((batch_size, 1), 0.9, dtype=torch.float32, device=device)  # Label smoothing
+        real_labels = torch.full((batch_size, 1), 0.9, dtype=torch.float32, device=device)
 
         # Discriminator output for real samples
         d_output_real = discriminator(real_samples)
@@ -211,16 +211,16 @@ for epoch in range(epochs):
         d_loss.backward()
         optimizer_D.step()
 
-        # --- Train Generator ---
-        generator.train()  # Switch generator to train mode
-        discriminator.eval()  # Keep discriminator in eval mode
+        # Train Generator
+        generator.train()
+        discriminator.eval()
         optimizer_G.zero_grad()
 
         # Generate new fake samples
         noise = torch.randn(batch_size, latent_dim, device=device)
         gen_samples = generator(noise)
 
-        # We want the discriminator to classify these as real (label 1)
+        # Classify label 1 as valid for the generator
         valid_labels_for_generator = torch.full((batch_size, 1), 1.0, dtype=torch.float32, device=device)
 
         # Discriminator output for the generator's fake samples
@@ -231,9 +231,8 @@ for epoch in range(epochs):
         g_loss.backward()
         optimizer_G.step()
 
-    # Log progress (e.g., at the end of each epoch)
-    # For accuracy, we can check d_output_real and d_output_fake predictions
-    # This is a simplified accuracy for the last batch
+    # Log progress at the end of each epoch
+
     with torch.no_grad():
         d_acc_real = ((d_output_real > 0.5).float().mean().item()) * 100
         d_acc_fake = ((d_output_fake < 0.5).float().mean().item()) * 100
@@ -252,7 +251,7 @@ with torch.no_grad():  # No need to track gradients
     noise_for_generation = torch.randn(num_samples_to_generate, latent_dim, device=device)
     synthetic_data_processed_tensor = generator(noise_for_generation)
 
-# Move to CPU and convert to NumPy array for scikit-learn's inverse_transform
+# Move to CPU and convert to NumPy array for inverse_transform
 synthetic_data_processed_np = synthetic_data_processed_tensor.cpu().numpy()
 logging.info(f"Generated processed synthetic data (NumPy). Shape: {synthetic_data_processed_np.shape}")
 
@@ -275,7 +274,7 @@ try:
 except Exception as e:
     logging.error(f"Error during inverse transformation or saving CSV: {e}")
     logging.warning(
-        "Saving processed data instead (before inverse transform) to 'synthetic_data_processed_fallback_pytorch.csv'")
+        "Saving processed data instead to 'synthetic_data_processed.csv'")
     try:
         processed_feature_names = data_preprocessor.get_feature_names_out()
     except AttributeError:

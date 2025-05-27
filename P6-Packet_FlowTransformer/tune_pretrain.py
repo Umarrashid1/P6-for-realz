@@ -8,26 +8,24 @@ import json
 from pathlib import Path
 import random
 import numpy as np
-import logging  # Standard logging
+import logging
 import os
-import sys  # For sys.stdout
+import sys
 from collections import Counter
 from sklearn.utils.class_weight import compute_class_weight
 
-# --- Project-specific Imports ---
+# Project-specific Imports
 from pipeline.iot_packet_dataset import IoTPacketDataset
 from models.packet_pretraining_model import PacketPretrainingModel
 from utils.category_mapping import load_mappings
 from pipeline.config import categorical_columns_packets, numerical_columns_packets, LABEL_MAPPING
 from utils.train_utils import get_balanced_loss
 
-# --- Configuration & Basic Setup ---
+# Configuration and Basic Setup
 CONFIG_FILE_PATH = Path("config.json")
 LOG_FILE_OPTUNA_PRETRAIN = "optuna_pretrain_log.txt"
 
 script_logger = logging.getLogger(__name__)
-# BasicConfig for the script's own logger (script_logger)
-# Note: Optuna's logging setup below will define how Optuna's specific logger behaves.
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - [%(name)s:%(filename)s:%(lineno)d] - %(message)s",
@@ -37,13 +35,13 @@ logging.basicConfig(
     ]
 )
 
-# Create a silent logger to pass to imported functions if we want to suppress their logs
+# Create a silent logger to pass to imported functions
 silent_logger = logging.getLogger('silent_optuna_worker')
 silent_logger.addHandler(logging.NullHandler())
 silent_logger.propagate = False
 
 
-# --- Helper: Load Main Config ---
+# Load Main Config
 def load_main_config(config_path):
     if not config_path.is_file():
         script_logger.error(f"CRITICAL: Main configuration file not found at {config_path}")
@@ -54,7 +52,7 @@ def load_main_config(config_path):
     return config
 
 
-# --- Global Variables (Loaded Once) ---
+# Global Variables
 MAIN_CONFIG = load_main_config(CONFIG_FILE_PATH)
 DEVICE = MAIN_CONFIG['general_settings']['device']
 if DEVICE == "cuda" and not torch.cuda.is_available():
@@ -93,11 +91,11 @@ INPUT_DIM_NUMERICAL_PACKET_CONFIG = MAIN_CONFIG['model_architecture'].get('input
 NUM_CLASSES_PACKET_CONFIG = MAIN_CONFIG['model_architecture']['num_classes_packet']
 
 
-# --- Optuna Objective Function for Pre-training ---
+# Optuna Objective Function for Pre-training
 def objective_pretrain(trial: optuna.trial.Trial):
     # This logger is for messages within the objective function, separate from Optuna's own logger
     objective_logger = logging.getLogger(f"optuna_trial_{trial.number}")
-    objective_logger.info(f"--- Starting Optuna Pre-training Trial: {trial.number} ---")
+    objective_logger.info(f"Starting Optuna Pre-training Trial: {trial.number} ")
 
     lr = trial.suggest_float("lr_pretrain", 1e-5, 1e-3, log=True)
     batch_size = trial.suggest_categorical("batch_size_pretrain", [32, 64, 128])
@@ -149,14 +147,14 @@ def objective_pretrain(trial: optuna.trial.Trial):
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=num_dataloader_workers, # This will now be 12
+        num_workers=num_dataloader_workers,
         pin_memory=pin_memory_flag
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=num_dataloader_workers, # This will now be 12
+        num_workers=num_dataloader_workers,
         pin_memory=pin_memory_flag
     )
 
@@ -181,7 +179,7 @@ def objective_pretrain(trial: optuna.trial.Trial):
     for epoch in range(1, epochs_pretrain + 1):
         model.train()
         total_train_loss = 0
-        for batch_idx, batch in enumerate(train_loader):  # Added batch_idx for more detailed logging if needed
+        for batch_idx, batch in enumerate(train_loader):
             packet_seq = batch["packet_seq"].to(DEVICE)
             attention_mask = batch["attention_mask"].to(DEVICE)
             labels = batch["label"].to(DEVICE)
@@ -266,12 +264,6 @@ if __name__ == "__main__":
     optuna_stream_handler = logging.StreamHandler(sys.stdout)  # CORRECTED
     optuna_file_handler = logging.FileHandler(LOG_FILE_OPTUNA_PRETRAIN, mode="a")  # CORRECTED
 
-    # You can set a specific format for Optuna's handlers if you want it different
-    # from the basicConfig, or let them use the default format.
-    # Example:
-    # optuna_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    # optuna_stream_handler.setFormatter(optuna_formatter)
-    # optuna_file_handler.setFormatter(optuna_formatter)
 
     optuna.logging.enable_propagation()  # Propagate messages to the root logger initially
     optuna.logging.disable_default_handler()  # Disable Optuna's own default stderr handler

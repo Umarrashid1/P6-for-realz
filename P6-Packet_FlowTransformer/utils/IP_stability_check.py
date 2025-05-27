@@ -22,38 +22,29 @@ DST_MAC_COL_NAME = 'dst_mac'
 
 IP_COL_NAMES = [SRC_IP_COL_NAME, DST_IP_COL_NAME]
 MAC_COL_NAMES = [SRC_MAC_COL_NAME, DST_MAC_COL_NAME]
-REQUIRED_KEYS = IP_COL_NAMES + MAC_COL_NAMES # Keys we need from the .pt file
+REQUIRED_KEYS = IP_COL_NAMES + MAC_COL_NAMES
 
 
 def load_mappings_from_json(path="category_mappings.json") -> Dict[str, Dict[Any, int]]:
     """Loads mappings, converting string representations back to original types."""
     print(f"Loading category mappings from {path}...")
-    try:
-        with open(path, "r") as f:
-            raw = json.load(f)
-        # Convert repr'd keys back to original types (int, float, str, etc.)
-        loaded_mappings = {}
-        for col, mapping in raw.items():
-            converted_mapping = {}
-            for k_repr, v_int in mapping.items():
-                try:
-                    original_key = ast.literal_eval(k_repr)
-                    converted_mapping[original_key] = v_int
-                except (ValueError, SyntaxError, TypeError) as e:
-                    print(f"  [Warning] Could not evaluate key '{k_repr}' for column '{col}'. Skipping. Error: {e}")
-                    continue
-            loaded_mappings[col] = converted_mapping
-        print("Mappings loaded successfully.")
-        return loaded_mappings
-    except FileNotFoundError:
-        print(f"❌ Error: Mappings file not found at {path}")
-        raise
-    except json.JSONDecodeError as e:
-         print(f"❌ Error: Could not decode JSON from {path}: {e}")
-         raise
-    except Exception as e:
-        print(f"❌ Error loading or processing mappings file {path}: {e}")
-        raise
+
+    with open(path, "r") as f:
+        raw = json.load(f)
+    # Convert repr'd keys back to original types
+    loaded_mappings = {}
+    for col, mapping in raw.items():
+        converted_mapping = {}
+        for k_repr, v_int in mapping.items():
+            try:
+                original_key = ast.literal_eval(k_repr)
+                converted_mapping[original_key] = v_int
+            except (ValueError, SyntaxError, TypeError) as e:
+                print(f"  [Warning] Could not evaluate key '{k_repr}' for column '{col}'. Skipping. Error: {e}")
+                continue
+        loaded_mappings[col] = converted_mapping
+    print("Mappings loaded successfully.")
+    return loaded_mappings
 
 
 def create_reverse_mappings(mappings: Dict[str, Dict[Any, int]]) -> Dict[str, Dict[int, Any]]:
@@ -63,7 +54,7 @@ def create_reverse_mappings(mappings: Dict[str, Dict[Any, int]]) -> Dict[str, Di
     for col, mapping in mappings.items():
         reverse_map = {v_int: k_orig for k_orig, v_int in mapping.items()}
         if len(reverse_map) != len(mapping):
-             print(f"  [Warning] Potential duplicate codes detected in mapping for column '{col}'. Reverse map might be incomplete.")
+             print(f"  [Warning] Potential duplicate codes detected in mapping for column '{col}'.")
         reverse_mappings[col] = reverse_map
     return reverse_mappings
 
@@ -71,8 +62,8 @@ def create_reverse_mappings(mappings: Dict[str, Dict[Any, int]]) -> Dict[str, Di
 def check_ip_mac_stability_from_pt_v2(
     pt_file_path: str,
     mappings_json_path: str,
-    ip_col_names: List[str], # e.g., ['src_ip', 'dst_ip']
-    mac_col_names: List[str] # e.g., ['src_mac', 'dst_mac']
+    ip_col_names: List[str],
+    mac_col_names: List[str]
     ) -> Tuple[str, pd.DataFrame]:
     """
     Analyzes preprocessed data (.pt file with separate categorical keys)
@@ -150,8 +141,7 @@ def check_ip_mac_stability_from_pt_v2(
              print(f"❌ Error: Column name '{e.args[0]}' not found in loaded mappings. Check config and mapping file consistency.")
              raise
 
-        # Map codes back to strings - use .get() for safety against missing codes
-        # Using list comprehension for potential speed improvement over pd.Series.map
+        # Reconstruct IP and MAC strings using the reverse mappings
         ip_strings = [reverse_map_ip.get(code, np.nan) for code in ip_codes_flat]
         mac_strings = [reverse_map_mac.get(code, np.nan) for code in mac_codes_flat]
 

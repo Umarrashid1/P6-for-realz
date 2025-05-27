@@ -55,7 +55,7 @@ def count_rows_per_directory(root_dir: str) -> DefaultDict[str, int]:
 
         logging.info(f"Processing file: {file_path}")
 
-        # Load the CSV file (test_mode is False for full scan)
+        # Load the CSV file
         loaded_data = load_csv_file(file_path, test_mode=False)
 
         if loaded_data:
@@ -65,7 +65,6 @@ def count_rows_per_directory(root_dir: str) -> DefaultDict[str, int]:
             logging.info(
                 f"Successfully read {num_rows} rows from {file_path}. Directory '{current_file_directory}' total: {directory_row_counts[current_file_directory]}")
         else:
-            # load_csv_file already prints a skip message to stdout
             logging.warning(f"Skipped file (or failed to load): {file_path}")
 
     return directory_row_counts
@@ -85,10 +84,10 @@ def main():
     if not all_directory_counts:
         logging.info("No row counts to report.")
     else:
-        logging.info("--- Directory Row Counts ---")
+        logging.info("Directory Row Counts ")
         for dir_path, count in sorted(all_directory_counts.items()):  # Sort for consistent output
             logging.info(f"Directory: {dir_path} - Total Rows: {count}")
-        logging.info("--- End of Report ---")
+        logging.info("End of Report")
 
     success_message = f"Script finished. Results logged to {LOG_FILE_NAME}"
     print(success_message)

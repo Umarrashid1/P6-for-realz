@@ -4,19 +4,12 @@ import pandas as pd
 import concurrent.futures
 from typing import List, Tuple, Dict, Optional
 import logging
-import time # Added for timing feedback
-
-# Assuming io_utils is in the same directory or package structure allows this import
-# If io_utils.load_csv_file can accept 'usecols', it's more memory efficient.
-# We will proceed assuming it loads the full CSV and we select the column,
-# but ideally, modify load_csv_file or use pd.read_csv directly here if possible.
-from . import io_utils # Or adjust based on your structure e.g., import io_utils
-
-# --- Worker function is no longer needed ---
+import time
+from . import io_utils
 
 def calculate_global_flow_length_stats(
     dataset_dir: str,
-    stream_col_name: str = "stream", # Make stream column name configurable
+    stream_col_name: str = "stream",
     test_mode: bool = False,
     rows_per_file: Optional[int] = None,
     percentiles: List[int] = [50, 75, 90, 95, 99, 100]
@@ -75,8 +68,6 @@ def calculate_global_flow_length_stats(
         for future in concurrent.futures.as_completed(futures_load):
             file_path = futures_load[future] # Get path for context
             try:
-                # result is (df, file_path) or None if io_utils returns tuple
-                # Adjust based on what io_utils.load_csv_file actually returns
                 load_result = future.result()
 
                 # Assuming result is the DataFrame or (DataFrame, path_string)
@@ -93,7 +84,7 @@ def calculate_global_flow_length_stats(
                             loaded_data_frames.append(df[[stream_col_name]])
                         else:
                              logging.warning(f"'{stream_col_name}' column not found in {file_path}. Skipping file for analysis.")
-                    # else: df is empty, ignore
+
                 else:
                     logging.warning(f"Failed to load or got empty result for {file_path}")
 
@@ -169,7 +160,7 @@ def calculate_global_flow_length_stats(
         logging.info(f"Total analysis time: {stats_done_time - start_time:.2f} seconds.")
         logging.info("Global flow length analysis complete.")
 
-        # Format stats for logging - Ensure all values are handled
+        # Format stats for logging
         formatted_stats = {
             k: f'{v:.2f}' if isinstance(v, (float, np.number)) and not np.isnan(v) else
                ('NaN' if isinstance(v, float) and np.isnan(v) else v)
@@ -253,52 +244,37 @@ if __name__ == "__main__":
                 # rows_per_file=1000 # Uncomment to limit rows per file for testing
             )
 
-            if flow_stats:
-                print("\n--- Global Flow Length Statistics ---")
-                for key, value in flow_stats.items():
-                    if isinstance(value, float) and np.isnan(value):
-                        print(f"{key}: NaN")
-                    else:
-                        try:
-                            if isinstance(value, (int, float, np.number)):
-                                print(f"{key}: {value:,.2f}") # Format with commas and 2 decimals
-                            else:
-                                print(f"{key}: {value}")
-                        except (TypeError, ValueError):
+        if flow_stats:
+            print("\nGlobal Flow Length Statistics")
+            for key, value in flow_stats.items():
+                if isinstance(value, float) and np.isnan(value):
+                    print(f"{key}: NaN")
+                else:
+                    try:
+                        if isinstance(value, (int, float, np.number)):
+                            print(f"{key}: {value:,.2f}")
+                        else:
                             print(f"{key}: {value}")
+                    except (TypeError, ValueError):
+                        print(f"{key}: {value}")
 
                 # Suggest an optimal length (e.g., 95th or 99th percentile)
                 p_suggest = 99 # Consider using 99th percentile for sequence length
                 p_key = f"{p_suggest}th_percentile"
                 p_val = flow_stats.get(p_key, np.nan)
 
-                if not np.isnan(p_val):
-                   suggested_len = int(p_val)
-                   print(f"\nSuggested max_seq_len (based on {p_key}): {suggested_len}")
-                else:
-                   # Fallback if percentile calculation failed or wasn't requested
-                   p95_val = flow_stats.get("95th_percentile", np.nan)
-                   if not np.isnan(p95_val):
-                       suggested_len = int(p95_val)
-                       logger.warning(f"{p_key} not found, using 95th percentile.")
-                       print(f"\nSuggested max_seq_len (based on 95th_percentile): {suggested_len}")
-                   else:
-                       suggested_len = 128 # Arbitrary default if common percentiles missing
-                       logger.warning(f"{p_key} and 95th percentile not found, suggesting default max_seq_len={suggested_len}.")
-                       print(f"\nSuggested max_seq_len (default): {suggested_len}")
-
+            if not np.isnan(p_val):
+               suggested_len = int(p_val)
+               print(f"\nSuggested max_seq_len (based on {p_key}): {suggested_len}")
             else:
-                print("\nNo global flow statistics were calculated.")
+               # Fallback if percentile calculation failed
+               p95_val = flow_stats.get("95th_percentile", np.nan)
+               if not np.isnan(p95_val):
+                   suggested_len = int(p95_val)
+                   logger.warning(f"{p_key} not found, using 95th percentile.")
+                   print(f"\nSuggested max_seq_len (based on 95th_percentile): {suggested_len}")
+               else:
+                   suggested_len = 128
+                   logger.warning(f"{p_key} and 95th percentile not found, suggesting default max_seq_len={suggested_len}.")
+                   print(f"\nSuggested max_seq_len (default): {suggested_len}")
 
-            # Clean up mock data if created
-            # if 'MockIoUtils' in locals() and os.path.exists(DATASET_DIRECTORY):
-            #     import shutil
-            #     shutil.rmtree(DATASET_DIRECTORY)
-            #     print(f"\nCleaned up mock data directory: {DATASET_DIRECTORY}")
-
-
-        except ImportError as e:
-            logger.error(f"Import error: {e}. Check the import statement for 'io_utils' and your Python path/package structure.")
-            logger.error("If running as a script, ensure the module structure supports the relative import or adjust the import.")
-        except Exception as e:
-            logger.exception(f"An unexpected error occurred during execution: {e}")

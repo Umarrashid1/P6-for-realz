@@ -52,7 +52,7 @@ def _build_loaders(train_ds, val_ds, batch_size: int, sampler_on: bool, num_work
                            pin_memory=True if num_workers > 0 else False)
 
         class_counts = Counter(labels)
-        if not class_counts:  # Example
+        if not class_counts:
             logger.warning("Class counts for sampler are empty. Using standard DataLoader.")
             # (Same return as above)
             return DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers,
@@ -113,14 +113,14 @@ def train_model(
         save_dir: str = "checkpoints",
         logger: Optional[logging.Logger] = None,
         num_workers: int = 0,
-        patience: int = 5  # New parameter for early stopping
+        patience: int = 5  # parameter for early stopping
 ):
     if logger is None:
         logger = module_logger
 
     os.makedirs(save_dir, exist_ok=True)
-    logger.info(f"Starting training for up to {epochs} epochs on device '{device}'...") # Modified log
-    logger.info(f"Early stopping patience: {patience} epochs.") # New log
+    logger.info(f"Starting training for up to {epochs} epochs on device '{device}'...")
+    logger.info(f"Early stopping patience: {patience} epochs.")
     logger.info(f"Saving checkpoints to '{save_dir}'")
     logger.info(f"Using {num_workers} workers for DataLoaders.")
 

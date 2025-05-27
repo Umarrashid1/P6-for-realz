@@ -8,15 +8,8 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 from pipeline.config import LABEL_MAPPING
 import xgboost as xgb
 import time
-import argparse # Import argparse for command-line arguments
+import argparse
 from .config import  categorical_columns_flows, numerical_columns_flows, all_features
-
-# --- Configuration ---
-
-
-# IMPORTANT: Update this path to the main directory containing the class subdirectories
-# It's now also configurable via command-line argument
-# BASE_DATA_DIR = "../../dataset/roni/DatasetFlow" # Default value
 
 # Reverse mapping for printing results
 LABEL_NAMES = {v: k for k, v in LABEL_MAPPING.items()}
@@ -44,7 +37,7 @@ def find_label_from_path(file_path: str) -> int:
 
     # Iterate backwards through components (closer directories first)
     for folder_name in reversed(path_components):
-        if not folder_name:  # Skip empty components (e.g., from root '/')
+        if not folder_name:  # Skip empty components
             continue
         # Exact match first (case-insensitive)
         for key, label_value in LABEL_MAPPING.items():
@@ -59,7 +52,7 @@ def find_label_from_path(file_path: str) -> int:
 
 
     print(f"Warning: Could not find label for path: {file_path}")
-    return -1  # Return -1 if no label found
+    return -1
 
 
 def load_data(base_dir: str, max_files: int | None = None) -> pd.DataFrame | None:
@@ -74,7 +67,7 @@ def load_data(base_dir: str, max_files: int | None = None) -> pd.DataFrame | Non
         csv_files = glob.glob(os.path.join(base_dir, '**', '*.csv'), recursive=True)
     except Exception as e:
         print(f"Error during file search in '{base_dir}': {e}")
-        print("Please check if the BASE_DATA_DIR is correct and accessible.")
+
         return None
 
     if not csv_files:
@@ -90,10 +83,10 @@ def load_data(base_dir: str, max_files: int | None = None) -> pd.DataFrame | Non
         # Optionally shuffle before taking the first N files for more variety in test mode
         import random
         random.shuffle(csv_files)
-        files_to_process = csv_files[:max_files] # Take the first 'max_files' files
+        files_to_process = csv_files[:max_files]
 
     if not files_to_process:
-         print("Error: No files selected for processing (max_files might be 0 or negative, or no files found).")
+         print("Error: No files selected for processing (max_files could be 0 or negative, or no files found).")
          return None
 
     print(f"Attempting to load and process {len(files_to_process)} files...")
@@ -104,7 +97,7 @@ def load_data(base_dir: str, max_files: int | None = None) -> pd.DataFrame | Non
         label = find_label_from_path(file_path)
         if label != -1:  # Only process files where a label was found
             try:
-                # Read CSV, handle potential parsing errors if needed
+                # Read CSV, handle potential parsing errors
                 df_chunk = pd.read_csv(file_path, low_memory=False)
 
                 # Clean column names (remove leading/trailing spaces)
@@ -123,9 +116,7 @@ def load_data(base_dir: str, max_files: int | None = None) -> pd.DataFrame | Non
                 all_data_frames.append(df_chunk)
                 processed_count += 1
 
-                # Print progress more frequently or at the end
-                # if (processed_count) % 10 == 0 or (i + 1) == len(files_to_process):
-                #     print(f"  Processed {processed_count}/{len(files_to_process)} attempted files...")
+
 
             except pd.errors.EmptyDataError:
                  print(f"Warning: Skipping empty file {file_path}")
@@ -175,7 +166,6 @@ def preprocess_data(df: pd.DataFrame, cat_cols: list, num_cols: list) -> pd.Data
     nan_cols_before = df.columns[df.isna().any()].tolist()
     if nan_cols_before:
         print(f"  Handling missing values (filling with 0) in columns: {nan_cols_before}...")
-        # Important: Fill NaNs *before* changing types
         df.fillna(0, inplace=True)
     else:
         print("  No missing values (NaN) found before filling.")
@@ -186,11 +176,11 @@ def preprocess_data(df: pd.DataFrame, cat_cols: list, num_cols: list) -> pd.Data
     label_encoders = {}
     for col in cat_cols:
         if col in df.columns:
-            # Convert to string first to handle potential mixed types gracefully
+            # Convert to string first to handle mixed types
             df[col] = df[col].astype(str)
             le = LabelEncoder()
             df[col] = le.fit_transform(df[col])
-            label_encoders[col] = le  # Store encoder if needed later
+            label_encoders[col] = le  # Store encoder
         else:
             print(f"  Warning: Categorical column '{col}' not found in DataFrame for encoding.")
 
@@ -207,10 +197,6 @@ def preprocess_data(df: pd.DataFrame, cat_cols: list, num_cols: list) -> pd.Data
                  if new_nan_count > original_nan_count:
                      print(f"    Warning: Coercion created {new_nan_count - original_nan_count} new NaNs in column '{col}'.")
                      nan_created = True
-            # Or check if dtype is numeric but contains non-finite values not caught earlier
-            # This check might be redundant after replace inf/nan and fillna(0)
-            # if not np.all(np.isfinite(df[col])):
-            #      print(f"    Warning: Non-finite values found in numeric column '{col}' after initial handling.")
 
         else:
              print(f"  Warning: Numerical column '{col}' not found in DataFrame for type check.")
@@ -246,7 +232,7 @@ def run_pipeline(base_dir: str, max_files: int | None = None):
 
     # Check if 'Label' column exists after loading
     if 'Label' not in df_raw.columns:
-        print("Error: 'Label' column not found after loading data. Check load_data function and label assignment.")
+        print("Error: 'Label' column not found after loading data")
         return
 
     print("\nInitial Data Info:")
@@ -313,7 +299,7 @@ def run_pipeline(base_dir: str, max_files: int | None = None):
             X, y, test_size=0.2, random_state=42, stratify=stratify_param
         )
     except ValueError as e:
-         print(f"Error during train_test_split (possibly due to too few samples per class for stratification): {e}")
+         print(f"Error during train_test_split {e}")
          print("Attempting split without stratification...")
          try:
              X_train, X_test, y_train, y_test = train_test_split(
@@ -349,12 +335,9 @@ def run_pipeline(base_dir: str, max_files: int | None = None):
 
     # Baseline XGBoost Classifier for multi-class classification
     model = xgb.XGBClassifier(
-        objective='multi:softmax',  # Specify multi-class classification
-        num_class=num_classes,      # Number of classes present in training data
-        # use_label_encoder=False,  # Deprecated in newer XGBoost, defaults to False
+        objective='multi:softmax',
+        num_class=num_classes,
         eval_metric='mlogloss',     # Logloss metric for multi-class
-        # Add other parameters for tuning if needed (e.g., n_estimators, max_depth, learning_rate)
-        # For baseline, defaults are often sufficient.
         random_state=42
     )
 
@@ -362,7 +345,6 @@ def run_pipeline(base_dir: str, max_files: int | None = None):
         model.fit(X_train, y_train)
     except Exception as e:
         print(f"Error during model training: {e}")
-        # Consider adding more specific error handling if needed
         print("Check data types and values in training data.")
         print("X_train dtypes:\n", X_train.dtypes)
         print("y_train unique values:", np.unique(y_train))
@@ -396,7 +378,7 @@ def run_pipeline(base_dir: str, max_files: int | None = None):
 
     # --- Classification Report (Precision, Recall, F1-Score) ---
     print("Classification Report:")
-    # Get target names in the correct order based on unique labels present in y_test/y_pred
+    # Get target names
     present_labels_in_results = sorted(np.unique(np.concatenate((y_test, y_pred))))
     target_names_ordered = [LABEL_NAMES.get(i, f"Unknown ({i})") for i in present_labels_in_results]
     # Ensure labels argument matches the order of target_names_ordered
@@ -415,7 +397,7 @@ def run_pipeline(base_dir: str, max_files: int | None = None):
     print("\nClass-wise Accuracy (Recall):")
     # Calculate accuracy (recall) for each class directly from the CM diagonal
     class_accuracy = cm.diagonal() / cm.sum(axis=1)
-    # Handle potential division by zero if a class has no true samples in the test set (shouldn't happen with default CM)
+    # Handle potential division by zero if a class has no true samples in the test set
     class_accuracy = np.nan_to_num(class_accuracy) # Replace NaN with 0
 
     if len(class_accuracy) == len(target_names_ordered):
@@ -435,12 +417,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="../../dataset/roni/DatasetFlow", # Default value if not provided
+        default="../../dataset/roni/DatasetFlow",
         help="Path to the base directory containing class subdirectories with CSV files."
     )
     parser.add_argument(
         "--test",
-        action="store_true", # Makes it a flag: presence means True, absence means False
+        action="store_true",
         help=f"Run in test mode, loading a limited number of files (default: {DEFAULT_MAX_FILES_TEST_MODE})."
     )
     parser.add_argument(
@@ -452,7 +434,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Determine the final max_files value based on arguments
+
     limit_files = None
     if args.test:
         limit_files = args.max_files if args.max_files is not None else DEFAULT_MAX_FILES_TEST_MODE

@@ -97,7 +97,7 @@ logger.info(f"Processed Packet Dataset Path: {PROCESSED_PACKET_DATA_PATH}")
 model_arch_cfg = config['model_architecture']
 transformer_body_cfg = model_arch_cfg['transformer_body']
 MAX_SEQ_LEN_PACKET = model_arch_cfg['max_seq_len_packet']
-INPUT_DIM_NUMERICAL_PACKET = len(numerical_columns_packets) # Or from config: model_arch_cfg.get('input_dim_packet_numerical', len(numerical_columns_packets))
+INPUT_DIM_NUMERICAL_PACKET = len(numerical_columns_packets)
 NUM_CLASSES_PACKET = model_arch_cfg['num_classes_packet']
 
 logger.info(f"Key Model Arch Params: embed_dim/d_model={transformer_body_cfg['d_model']}, heads={transformer_body_cfg['num_heads']}, layers={transformer_body_cfg['num_layers']}, dropout={transformer_body_cfg['dropout']}")
@@ -128,10 +128,10 @@ try:
     full_dataset = IoTPacketDataset(PROCESSED_PACKET_DATA_PATH, max_seq_len=MAX_SEQ_LEN_PACKET)
     logger.info(f"   Dataset loaded. Total sequences: {len(full_dataset)}")
 except Exception as e:
-    logger.error(f"❌ Error loading packet dataset: {e}", exc_info=True)
+    logger.error(f" Error loading packet dataset: {e}", exc_info=True)
     exit(1)
 
-# --- 2. Initialize Transformer Model ---
+# Initialize Transformer Model
 logger.info("2. Initializing IoTTransformer model...")
 try:
     # Assuming category_mappings.json is in a standard location or its path is also configured
@@ -149,7 +149,7 @@ try:
             cat_pad[col] = 0   # Default to padding_idx 0 if missing
         elif "unknown" not in cat_map[col]:
             logger.warning(f"'unknown' category not found for column {col} in mappings. Using padding_idx 0 as default.")
-            cat_pad[col] = 0 # Default if "unknown" key is missing
+            cat_pad[col] = 0
 
     model_arguments_for_instance = {
         "input_dim": INPUT_DIM_NUMERICAL_PACKET,
@@ -162,8 +162,6 @@ try:
         "num_classes": NUM_CLASSES_PACKET,
         "max_seq_len": MAX_SEQ_LEN_PACKET,
     }
-    # REMOVED: Detailed logging of model_arguments_for_instance as JSON, individual params logged above
-    # REMOVED: Saving of model_arguments_for_instance to PACKET_MODEL_CONFIG_SAVE_PATH
 
     model = PacketPretrainingModel(**model_arguments_for_instance)
     model.to(DEVICE)
@@ -175,7 +173,7 @@ except Exception as e:
 
 # --- 3. Split Dataset ---
 logger.info("3. Splitting dataset...")
-dataset_params_cfg = config.get('dataset_params', {}) # Safe access
+dataset_params_cfg = config.get('dataset_params', {})
 val_ratio = dataset_params_cfg.get('val_ratio_packet', 0.1)
 test_ratio = dataset_params_cfg.get('test_ratio_packet', 0.1)
 
@@ -186,7 +184,7 @@ train_dataset, val_dataset, test_dataset = split_dataset_three_ways(
     logger_instance=logger
 )
 
-# --- 4. Train Model ---
+# Train Model
 logger.info("4. Starting model training...")
 try:
     train_model(  # Assuming train.py is updated for logger and num_workers
@@ -209,7 +207,7 @@ except Exception as e:
     logger.error(f"❌ Error during model training: {e}", exc_info=True)
     exit(1)
 
-# --- 5. Test Model ---
+# Test Model
 logger.info("5. Starting model testing...")
 try:
     best_model_path_pretrain = PACKET_MODEL_SAVE_DIR / "model_best.pt"
@@ -228,9 +226,9 @@ try:
         model_path=model_path_to_test,
         logger=logger
     )
-    logger.info("   ✅ Model testing completed.")
+    logger.info(" Model testing completed.")
 except Exception as e:
-    logger.error(f"❌ Error during model testing: {e}", exc_info=True)
+    logger.error(f" Error during model testing: {e}", exc_info=True)
     exit(1)
 
 logger.info("🏁 Packet pre-training script (with central config & logging) finished. 🏁")
