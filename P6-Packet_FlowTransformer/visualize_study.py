@@ -4,10 +4,10 @@ import plotly  # Optuna's visualization typically uses Plotly
 import sklearn
 
 # Ensure the directory for saving plots exists
-output_dir = "optuna_visualizations_finetune"
+output_dir = "optuna_visualizations_baseline"
 os.makedirs(output_dir, exist_ok=True)
 
-study_name = "finetune-flow-study"  # From your tune_pretrain.py
+study_name = "baseline-flow-transformer-study"  # From your tune_pretrain.py
 storage_name = f"sqlite:///{study_name}.db"  # From your tune_pretrain.py
 
 try:
