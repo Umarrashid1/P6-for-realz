@@ -9,14 +9,14 @@ from pipeline.config import LABEL_MAPPING
 import xgboost as xgb
 import time
 import argparse # Import argparse for command-line arguments
-from pipeline.config import categorical_columns_flows, numerical_columns_flows
+from .config import  categorical_columns_flows, numerical_columns_flows, all_features
 
 # --- Configuration ---
 
 
 # IMPORTANT: Update this path to the main directory containing the class subdirectories
 # It's now also configurable via command-line argument
-BASE_DATA_DIR = "../../dataset/roni/DatasetFlow" # Default value
+# BASE_DATA_DIR = "../../dataset/roni/DatasetFlow" # Default value
 
 # Reverse mapping for printing results
 LABEL_NAMES = {v: k for k, v in LABEL_MAPPING.items()}
@@ -25,7 +25,7 @@ LABEL_NAMES = {v: k for k, v in LABEL_MAPPING.items()}
 DEFAULT_MAX_FILES_TEST_MODE = 10
 
 # List of all features to be used in the model
-all_features = categorical_columns_flows + numerical_columns_flows  # Calculate all features from imported lists
+all_features = categorical_columns_flows + numerical_columns_flows
 
 
 # --- Helper Functions ---
@@ -435,7 +435,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="../../dataset/roni/DatasetFlow", # Default value if not provided
+        default="../../../dataset/roni/DatasetFlow", # Default value if not provided
         help="Path to the base directory containing class subdirectories with CSV files."
     )
     parser.add_argument(
