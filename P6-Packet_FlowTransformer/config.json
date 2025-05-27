@@ -7,16 +7,16 @@
   },
   "model_architecture": {
     "transformer_body": {
-      "d_model": 64,
+      "d_model": 128,
       "num_heads": 4,
-      "num_layers": 2,
-      "dropout": 0.1
+      "num_layers": 4,
+      "dropout": 0.051488
     },
     "input_dim_packet_numerical": 107,
     "max_seq_len_packet": 64,
     "num_classes_packet": 8,
     "num_classes_flow": 8,
-    "classifier_dropout_flow": 0.110841
+    "classifier_dropout_flow": 0.185713
   },
   "training_params": {
     "pre_training_packet": {
@@ -35,7 +35,7 @@
     },
     "baseline_flow_only": {
       "epochs": 10,
-      "lr": 5e-5,
+      "lr": 0.000101,
       "batch_size": 64,
       "clip_grad": 1.0,
       "use_weighted_sampler": false
