@@ -3,14 +3,6 @@ import torch.nn as nn
 from typing import Dict
 
 class PacketPretrainingModel(nn.Module):
-    """Transformer model that consumes:
-        - `packet_seq`    : FloatTensor [B, T, F_num]  (numeric features)
-        - `cat_feats`     : Dict[col, LongTensor [B, T]] (categorical IDs)
-        - `attention_mask`: FloatTensor / LongTensor [B, T] with 1 = valid, 0 = pad
-
-    Each categorical column is embedded separately and **added** to the
-    projected numeric stream before feeding the sequence to the Transformer.
-    """
 
     def __init__(
         self,

@@ -12,35 +12,19 @@ from sklearn.metrics import (
     confusion_matrix,
     precision_recall_fscore_support,
 )
-from sklearn.utils.class_weight import compute_class_weight
 from torch.utils.data import DataLoader, WeightedRandomSampler
 import logging  # Import logging
 from utils.train_utils import get_balanced_loss
 
 # Get a default logger for this module
 module_logger = logging.getLogger(__name__)
-if not module_logger.hasHandlers():
-    _handler = logging.StreamHandler()
-    _formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    _handler.setFormatter(_formatter)
-    module_logger.addHandler(_handler)
-    module_logger.setLevel(logging.INFO)
 
-
-
-# ────────────────────────────────────────────────────────────────────────────────
-# Helper functions (Updated)
-# ────────────────────────────────────────────────────────────────────────────────
-
-# Modified to accept and use num_workers and logger
 def _build_loaders(train_ds, val_ds, batch_size: int, sampler_on: bool, num_workers: int = 0,
                    logger: Optional[logging.Logger] = None):
     if logger is None:
         logger = module_logger
 
-    # logger.info(f"Building loaders: Sampler {'ON' if sampler_on else 'OFF'}, BatchSize: {batch_size}, NumWorkers: {num_workers}")
     if sampler_on:
-        # Ensure labels are available and valid for sampling
         if not hasattr(train_ds, '__getitem__') or not hasattr(train_ds, '__len__') or len(train_ds) == 0:
             logger.warning("Training dataset is invalid or empty for sampler. Using standard DataLoader.")
             return DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers,
@@ -68,7 +52,6 @@ def _build_loaders(train_ds, val_ds, batch_size: int, sampler_on: bool, num_work
                            pin_memory=True if num_workers > 0 else False)
 
         class_counts = Counter(labels)
-        # ... (rest of your sampler logic, replacing print with logger.warning) ...
         if not class_counts:  # Example
             logger.warning("Class counts for sampler are empty. Using standard DataLoader.")
             # (Same return as above)
@@ -115,14 +98,6 @@ def _build_loaders(train_ds, val_ds, batch_size: int, sampler_on: bool, num_work
     return train_loader, val_loader
 
 
-# Modified to accept and use logger
-
-
-# ────────────────────────────────────────────────────────────────────────────────
-# Core API (Updated)
-# ────────────────────────────────────────────────────────────────────────────────
-
-# Modified to accept logger, num_workers, and patience for early stopping
 def train_model(
         model: nn.Module,
         train_dataset,
@@ -272,9 +247,7 @@ def train_model(
             f"NaN Batches (Trn/Val): {nan_batches_train}/{nan_batches_val}"
         )
 
-        # No longer save every epoch checkpoint by default, only best.
-        # epoch_save_path = os.path.join(save_dir, f"model_ep{epoch}.pt")
-        # torch.save(model.state_dict(), epoch_save_path)
+
 
         if macro_f1 > best_val_f1:
             best_val_f1 = macro_f1
@@ -284,7 +257,7 @@ def train_model(
             logger.info(f"  -> New best validation Macro-F1: {best_val_f1:.4f} at epoch {best_epoch}. Saved to '{best_save_path}'")
             epochs_no_improve = 0  # New: Reset counter
         else:
-            epochs_no_improve += 1 # New: Increment counter
+            epochs_no_improve += 1
             logger.info(f"  Validation Macro-F1 did not improve for {epochs_no_improve} epoch(s). Best was {best_val_f1:.4f} at epoch {best_epoch}.")
 
         if epochs_no_improve >= patience: # New: Check for early stopping
@@ -292,17 +265,15 @@ def train_model(
             break  # New: Stop training
 
     logger.info("\n" + "=" * 30 + " Training Finished " + "=" * 30)
-    # logger.info(f"Final model state potentially saved for epoch {epoch} to {epoch_save_path}.") # Potentially misleading if early stopped
     logger.info(f"Best model (Val Macro-F1: {best_val_f1:.4f} at epoch {best_epoch}) saved to '{os.path.join(save_dir, 'model_best.pt')}'")
 
 
 # ────────────────────────────────────────────────────────────────────────────────
 
-# Modified to accept logger and num_workers (for consistency if test_loader uses it)
 def test_model(
         model: nn.Module,
         test_dataset,
-        categorical_columns: List[str],  # Added to know which cat_feats to expect
+        categorical_columns: List[str],
         batch_size: int = 64,
         device: str = "cuda",
         model_path: Optional[str] = None,
