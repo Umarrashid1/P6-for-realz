@@ -3,7 +3,7 @@
     "raw_packet_dir": "../../../dataset/raw_dataset",
     "processed_packet_pt": "../../../dataset/packet_subset_halved.pt",
     "raw_flow_dir": "../../../dataset/roni/DatasetFlow",
-    "processed_flow_pt": "../../../dataset/processed_flows_subset_25pct.pt"
+    "processed_flow_pt": "../../../dataset/processed_flows.pt"
   },
   "model_architecture": {
     "transformer_body": {
@@ -16,7 +16,7 @@
     "max_seq_len_packet": 64,
     "num_classes_packet": 8,
     "num_classes_flow": 8,
-    "classifier_dropout_flow": 0.1
+    "classifier_dropout_flow": 0.110841
   },
   "training_params": {
     "pre_training_packet": {
@@ -28,8 +28,8 @@
     },
     "fine_tuning_flow": {
       "epochs": 10,
-      "lr": 5e-5,
-      "batch_size": 64,
+      "lr": 2.68e-4,
+      "batch_size": 32,
       "clip_grad": 1.0,
       "use_weighted_sampler": true
     },
@@ -43,11 +43,11 @@
   },
   "paths": {
     "packet_model_save_dir": "checkpoints_packet_model",
-    "finetuned_model_save_dir": "checkpoints_flow_finetuned_vMain_WS",
+    "finetuned_model_save_dir": "checkpoints_flow_finetuned_optuna_best",
     "flow_only_baseline_save_dir": "checkpoints_flow_only_baseline",
     "log_dir": "logs",
     "baseline_flow_only_log_file": "training_baseline_flow_only.log",
-    "finetuned_model_log_file": "training_finetuned_model.log",
+    "finetuned_model_log_file": "training_finetuned_model_optuna_best.log",
     "packet_pretraining_log_file": "training_packet_pretraining.log"
   },
   "general_settings": {
