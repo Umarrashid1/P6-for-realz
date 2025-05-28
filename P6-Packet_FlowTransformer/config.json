@@ -3,7 +3,7 @@
     "raw_packet_dir": "../../../dataset/raw_dataset",
     "processed_packet_pt": "../../../dataset/packet_subset_halved.pt",
     "raw_flow_dir": "../../../dataset/roni/DatasetFlow",
-    "processed_flow_pt": "../../../dataset/processed_flows_subset_25pct.pt"
+    "processed_flow_pt": "../../../dataset/processed_flows.pt"
   },
   "model_architecture": {
     "transformer_body": {
@@ -27,14 +27,14 @@
       "use_weighted_sampler": false
     },
     "fine_tuning_flow": {
-      "epochs": 10,
+      "epochs": 20,
       "lr": 2.68e-4,
       "batch_size": 32,
       "clip_grad": 1.0,
       "use_weighted_sampler": false
     },
     "baseline_flow_only": {
-      "epochs": 10,
+      "epochs": 20,
       "lr": 0.000101,
       "batch_size": 64,
       "clip_grad": 1.0,
