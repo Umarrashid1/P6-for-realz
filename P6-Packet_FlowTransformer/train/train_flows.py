@@ -12,16 +12,14 @@ from sklearn.metrics import (
     confusion_matrix,
     precision_recall_fscore_support,
 )
-from sklearn.utils.class_weight import compute_class_weight
+from sklearn.utils.class_weight import compute_class_weight # Will be used if get_balanced_loss is not used
 from torch.utils.data import DataLoader, WeightedRandomSampler
 import logging # Import logging
-from utils.train_utils import get_balanced_loss
+from utils.train_utils import get_balanced_loss # Assuming this handles class weights
+from pathlib import Path # For handling paths
 
-# Get a default logger for this module.
-# If the calling script configures the root logger, this might inherit some settings.
-# Or, it will use basic default configuration if not otherwise set.
 module_logger = logging.getLogger(__name__)
-if not module_logger.hasHandlers(): # Add a basic handler if no handlers are configured by calling script
+if not module_logger.hasHandlers():
     _handler = logging.StreamHandler()
     _formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     _handler.setFormatter(_formatter)
@@ -29,13 +27,9 @@ if not module_logger.hasHandlers(): # Add a basic handler if no handlers are con
     module_logger.setLevel(logging.INFO)
 
 
-# --- Re-define or Import Helper Functions ---
-# Modified to accept and use a logger
 def _build_loaders(train_ds, val_ds, batch_size: int, sampler_on: bool, num_workers: int = 0, logger: Optional[logging.Logger] = None):
     if logger is None:
         logger = module_logger
-
-    # logger.info(f"Building loaders: Sampler {'ON' if sampler_on else 'OFF'}, Batch Size: {batch_size}, Num Workers: {num_workers}")
     if sampler_on:
         try:
             labels = [train_ds[i]["label"].item() for i in range(len(train_ds))]
@@ -45,46 +39,34 @@ def _build_loaders(train_ds, val_ds, batch_size: int, sampler_on: bool, num_work
         except AttributeError:
             logger.error("Label in dataset must be a tensor for .item() for weighted sampler.")
             raise
-
         if not labels:
             logger.warning("Training dataset is empty for sampler. Using standard DataLoader.")
-            # ... (return standard DataLoaders) ...
             return DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers,
                               pin_memory=True if num_workers > 0 else False), \
                 DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers,
                            pin_memory=True if num_workers > 0 else False)
-
-
         class_counts = Counter(labels)
         if not class_counts:
             logger.warning("Class counts for sampler are empty. Using standard DataLoader.")
-            # ... (return standard DataLoaders) ...
             return DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers,
                               pin_memory=True if num_workers > 0 else False), \
                 DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers,
                            pin_memory=True if num_workers > 0 else False)
-
-
         w_per_class = {c: 1.0 / count for c, count in class_counts.items() if count > 0}
         if not w_per_class:
             logger.warning("All class counts for sampler are zero. Using standard DataLoader.")
-            # ... (return standard DataLoaders) ...
             return DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers,
                               pin_memory=True if num_workers > 0 else False), \
                 DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers,
                            pin_memory=True if num_workers > 0 else False)
-
-
         sample_w = [w_per_class.get(y, 0) for y in labels]
         positive_weights_indices = [i for i, w in enumerate(sample_w) if w > 0]
         if not positive_weights_indices:
             logger.warning("No valid samples with positive weights for sampler. Using standard DataLoader.")
-            # ... (return standard DataLoaders) ...
             return DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers,
                               pin_memory=True if num_workers > 0 else False), \
                 DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers,
                            pin_memory=True if num_workers > 0 else False)
-
         sampler = WeightedRandomSampler(weights=torch.DoubleTensor(sample_w), num_samples=len(train_ds),
                                         replacement=True)
         train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=sampler, num_workers=num_workers,
@@ -92,16 +74,11 @@ def _build_loaders(train_ds, val_ds, batch_size: int, sampler_on: bool, num_work
     else:
         train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers,
                                   pin_memory=True if num_workers > 0 else False)
-
     val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers,
                             pin_memory=True if num_workers > 0 else False)
     return train_loader, val_loader
 
 
-
-
-
-# --- New Fine-tuning Function for Flows (Updated for logging) ---
 def fine_tune_flow_model(
         model: nn.Module,
         train_dataset,
@@ -115,29 +92,49 @@ def fine_tune_flow_model(
         use_weighted_sampler: bool = False,
         save_dir: str = "checkpoints_flow_finetuned",
         num_workers_loader: int = 0,
-        logger: Optional[logging.Logger] = None # <<<< MODIFIED: Accept logger
+        logger: Optional[logging.Logger] = None,
+        resume_checkpoint_path: Optional[str] = None  # New parameter
 ):
-    if logger is None: # Use default module logger if none is passed
+    if logger is None:
         logger = module_logger
 
     os.makedirs(save_dir, exist_ok=True)
-    logger.info(f"Starting FINE-TUNING for {epochs} epochs on device '{device}' using FLOW data...")
-    logger.info(f"Saving fine-tuned checkpoints to '{save_dir}'")
+    save_dir_path = Path(save_dir)
+
+    logger.info(f"Starting FINE-TUNING for up to {epochs} epochs on device '{device}' using FLOW data...")
+    logger.info(f"Saving fine-tuned checkpoints to '{save_dir_path}'")
 
     model.to(device)
-
     trainable_params = filter(lambda p: p.requires_grad, model.parameters())
     optimizer = optim.AdamW(trainable_params, lr=lr)
     logger.info(f"Optimizer AdamW initialized with LR: {lr} for trainable parameters.")
 
-    #criterion = get_balanced_loss(device, "packet", logger=logger)
-    criterion = nn.CrossEntropyLoss()  # Using standard CrossEntropyLoss
-    train_loader, val_loader = _build_loaders(train_dataset, val_dataset, batch_size, use_weighted_sampler,
-                                              num_workers=num_workers_loader, logger=logger) # Pass logger
+    criterion = get_balanced_loss(device, "flow", logger=logger) # Use "flow" for flow-specific weights if available
 
+    start_epoch = 1
     best_val_f1 = -1.0
 
-    for epoch in range(1, epochs + 1):
+    if resume_checkpoint_path and Path(resume_checkpoint_path).is_file():
+        logger.info(f"Resuming training from checkpoint: {resume_checkpoint_path}")
+        try:
+            checkpoint = torch.load(resume_checkpoint_path, map_location=device)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            start_epoch = checkpoint['epoch'] + 1
+            best_val_f1 = checkpoint.get('best_val_f1', -1.0) # Get best_val_f1 if saved
+            logger.info(f"Resumed from epoch {checkpoint['epoch']}. Starting at epoch {start_epoch}. Previous best F1: {best_val_f1:.4f}")
+        except Exception as e:
+            logger.error(f"Error loading checkpoint: {e}. Starting training from scratch.", exc_info=True)
+            start_epoch = 1
+            best_val_f1 = -1.0
+    elif resume_checkpoint_path:
+        logger.warning(f"Checkpoint path {resume_checkpoint_path} provided but not found. Starting training from scratch.")
+
+
+    train_loader, val_loader = _build_loaders(train_dataset, val_dataset, batch_size, use_weighted_sampler,
+                                              num_workers=num_workers_loader, logger=logger)
+
+    for epoch in range(start_epoch, epochs + 1):
         model.train()
         total_loss = 0.0
         correct_preds_train = 0
@@ -148,8 +145,10 @@ def fine_tune_flow_model(
             try:
                 numerical_flow_data = batch["numerical_features"].to(device)
                 categorical_flow_data = batch.get("categorical_features")
-                if categorical_flow_data is not None:
+                if categorical_flow_data is not None and categorical_flow_data.numel() > 0: # Check if not empty
                     categorical_flow_data = categorical_flow_data.to(device)
+                else:
+                    categorical_flow_data = None # Ensure it's None if empty
                 labels = batch["label"].to(device)
             except KeyError as e:
                 logger.error(f"❌ Batch missing expected key: {e}. Check your flow IoTDataset __getitem__.", exc_info=True)
@@ -160,16 +159,16 @@ def fine_tune_flow_model(
                 logger.warning(f"  ❌ Epoch {epoch:02d} Batch {batch_idx}: numerical_flow_data contains {num_nans} NaNs/Infs — skipping")
                 nan_batches_train += 1
                 continue
-            if categorical_flow_data is not None and not torch.isfinite(categorical_flow_data.float()).all():
+            if categorical_flow_data is not None and not torch.isfinite(categorical_flow_data.float()).all(): # Check only if not None
                 num_nans_cat = (~torch.isfinite(categorical_flow_data.float())).sum().item()
                 logger.warning(f"  ❌ Epoch {epoch:02d} Batch {batch_idx}: categorical_flow_data contains {num_nans_cat} NaNs/Infs — skipping")
                 nan_batches_train += 1
                 continue
 
-            if batch_idx == 0 and epoch == 1:
+            if batch_idx == 0 and epoch == 1: # Log only for the very first batch of a new run
                 abs_max_num = float(numerical_flow_data.abs().max())
                 logger.info(f"  Initial Batch 0 (Flows): numerical_flow_data abs-max = {abs_max_num:.3e}")
-                if abs_max_num > 1e4:
+                if abs_max_num > 1e4: # Increased threshold
                     logger.warning("  ⚠️ Flow numerical features seem large — check standardization for flows.")
 
             optimizer.zero_grad()
@@ -203,8 +202,10 @@ def fine_tune_flow_model(
                 try:
                     numerical_flow_data = batch["numerical_features"].to(device)
                     categorical_flow_data = batch.get("categorical_features")
-                    if categorical_flow_data is not None:
+                    if categorical_flow_data is not None and categorical_flow_data.numel() > 0: # Check if not empty
                         categorical_flow_data = categorical_flow_data.to(device)
+                    else:
+                        categorical_flow_data = None # Ensure it's None if empty
                     labels = batch["label"].to(device)
                 except KeyError as e:
                     logger.error(f"❌ Validation Batch missing expected key: {e}.", exc_info=True)
@@ -241,38 +242,50 @@ def fine_tune_flow_model(
 
         if macro_f1 > best_val_f1:
             best_val_f1 = macro_f1
-            best_model_path = os.path.join(save_dir, "model_flow_best.pt")
-            torch.save(model.state_dict(), best_model_path)
+            best_model_path = save_dir_path / "model_flow_best.pt" # Use Path object
+            checkpoint_data = {
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'best_val_f1': best_val_f1,
+                'lr': lr # Save learning rate as well
+            }
+            torch.save(checkpoint_data, best_model_path)
             logger.info(f"  -> New best validation Macro-F1: {best_val_f1:.4f}. Saved to '{best_model_path}'")
 
     logger.info("\n" + "=" * 30 + " Flow Fine-tuning Finished " + "=" * 30)
     logger.info(f"Best validation Macro-F1 achieved: {best_val_f1:.4f}")
 
 
-# --- New Test Function for Flows (Updated for logging) ---
 def test_flow_model(
         model: nn.Module,
         test_dataset,
         batch_size: int = 64,
         device: str = "cuda",
-        model_path: Optional[str] = None,
-        logger: Optional[logging.Logger] = None # <<<< MODIFIED: Accept logger
+        model_path: Optional[str] = None, # Can be path to model state_dict or full checkpoint
+        logger: Optional[logging.Logger] = None
 ):
-    if logger is None: # Use default module logger if none is passed
+    if logger is None:
         logger = module_logger
 
-    if model_path and os.path.exists(model_path):
-        logger.info(f"Loading model state for testing from: {model_path}")
+    if model_path and Path(model_path).is_file():
+        logger.info(f"Loading model for testing from: {model_path}")
         try:
-            model.load_state_dict(torch.load(model_path, map_location=device))
-            logger.info("Model loaded successfully for testing.")
+            checkpoint = torch.load(model_path, map_location=device)
+            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                model.load_state_dict(checkpoint['model_state_dict'])
+                logger.info("Loaded model_state_dict from checkpoint for testing.")
+            else:
+                # Assume it's just the model state_dict
+                model.load_state_dict(checkpoint)
+                logger.info("Loaded model state_dict directly for testing.")
         except Exception as e:
             logger.error(f"Error loading model state from {model_path}: {e}", exc_info=True)
-            logger.info("Proceeding with the model currently in memory.")
+            logger.info("Proceeding with the model currently in memory (if any).")
     elif model_path:
-        logger.warning(f"Specified model_path '{model_path}' not found. Using model currently in memory.")
+        logger.warning(f"Specified model_path '{model_path}' not found. Using model currently in memory (if any).")
 
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0) # num_workers for test can also be from config
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
 
     model.to(device)
     model.eval()
@@ -286,8 +299,10 @@ def test_flow_model(
             try:
                 numerical_flow_data = batch["numerical_features"].to(device)
                 categorical_flow_data = batch.get("categorical_features")
-                if categorical_flow_data is not None:
+                if categorical_flow_data is not None and categorical_flow_data.numel() > 0: # Check if not empty
                     categorical_flow_data = categorical_flow_data.to(device)
+                else:
+                    categorical_flow_data = None # Ensure it's None if empty
                 labels = batch["label"].to(device)
             except KeyError as e:
                 logger.error(f"❌ Test Batch missing expected key: {e}.", exc_info=True)
@@ -295,6 +310,9 @@ def test_flow_model(
 
             if not torch.isfinite(numerical_flow_data).all():
                 nan_batches_test += 1
+                continue
+            if categorical_flow_data is not None and not torch.isfinite(categorical_flow_data.float()).all(): # Check only if not None
+                nan_batches_test +=1
                 continue
 
             logits = model(numerical_flow_data, categorical_flow_data)
@@ -315,13 +333,14 @@ def test_flow_model(
     logger.info(f"Overall Test Accuracy: {accuracy:.4f}")
 
     target_names = None
-    if hasattr(test_dataset, 'get_target_names'):
+    # Attempt to get target names from dataset if available (e.g., for more descriptive reports)
+    if hasattr(test_dataset, 'classes') and test_dataset.classes:
+        target_names = test_dataset.classes
+    elif hasattr(test_dataset, 'get_target_names'): # Custom method you might implement
         try:
             target_names = test_dataset.get_target_names()
-        except:
-            pass
+        except: pass # Ignore if it fails
 
-    # Classification report can be a long string, log it appropriately
     report = classification_report(all_labels, all_preds, digits=4, zero_division=0, target_names=target_names)
     logger.info(f"Classification Report:\n{report}")
 
