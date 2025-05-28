@@ -15,7 +15,7 @@ import logging
 from pipeline.iot_flow_dataset import IoTFlowDataset
 from models.flow_finetuning_model import FlowFineTuningModel
 # Assuming train_flows_resumable.py contains fine_tune_flow_model_resumable
-from train.train_flows_resumable import fine_tune_flow_model_resumable, test_flow_model
+from finetune_resumable import fine_tune_flow_model_resumable, test_flow_model
 
 # --- 0. Hardcoded Configuration & Parameters ---
 
