@@ -43,11 +43,11 @@
   },
   "paths": {
     "packet_model_save_dir": "checkpoints_packet_model",
-    "finetuned_model_save_dir": "checkpoints_flow_finetuned_optuna_best_s",
+    "finetuned_model_save_dir": "checkpoints_flow_finetuned_gradual",
     "flow_only_baseline_save_dir": "checkpoints_flow_only_baseline",
     "log_dir": "logs",
     "baseline_flow_only_log_file": "training_baseline_flow_only.log",
-    "finetuned_model_log_file": "training_finetuned_model_optuna_best_s.log",
+    "finetuned_model_log_file": "training_finetuned_gradual.log",
     "packet_pretraining_log_file": "training_packet_pretraining.log"
   },
   "general_settings": {
