@@ -26,7 +26,8 @@ if not module_logger.hasHandlers():
     module_logger.setLevel(logging.INFO)
 
 
-def _build_loaders(train_ds, val_ds, batch_size: int, sampler_on: bool, num_workers: int = 0, logger: Optional[logging.Logger] = None):
+def _build_loaders(train_ds, val_ds, batch_size: int, sampler_on: bool, num_workers: int = 0,
+                   logger: Optional[logging.Logger] = None):
     if logger is None:
         logger = module_logger
     if sampler_on:
@@ -59,13 +60,6 @@ def _build_loaders(train_ds, val_ds, batch_size: int, sampler_on: bool, num_work
                 DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers,
                            pin_memory=True if num_workers > 0 else False)
         sample_w = [w_per_class.get(y, 0) for y in labels]
-        positive_weights_indices = [i for i, w in enumerate(sample_w) if w > 0]
-        if not positive_weights_indices:
-            logger.warning("No valid samples with positive weights for sampler. Using standard DataLoader.")
-            return DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers,
-                              pin_memory=True if num_workers > 0 else False), \
-                DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers,
-                           pin_memory=True if num_workers > 0 else False)
         sampler = WeightedRandomSampler(weights=torch.DoubleTensor(sample_w), num_samples=len(train_ds),
                                         replacement=True)
         train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=sampler, num_workers=num_workers,
@@ -93,8 +87,9 @@ def fine_tune_flow_model(
         num_workers_loader: int = 0,
         logger: Optional[logging.Logger] = None,
         resume_checkpoint_path: Optional[str] = None,
-        patience: int = 10,  # New: Early stopping patience
-        use_lr_scheduler: bool = True  # New: Flag for learning rate scheduler
+        patience: int = 10,
+        use_lr_scheduler: bool = True,
+        load_optimizer_state: bool = True
 ):
     if logger is None:
         logger = module_logger
@@ -110,7 +105,6 @@ def fine_tune_flow_model(
     optimizer = optim.AdamW(trainable_params, lr=lr)
     logger.info(f"Optimizer AdamW initialized with LR: {lr} for trainable parameters.")
 
-    # New: Initialize learning rate scheduler
     scheduler = None
     if use_lr_scheduler:
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -118,40 +112,48 @@ def fine_tune_flow_model(
         )
         logger.info("Initialized ReduceLROnPlateau LR scheduler with mode='max', factor=0.1, patience=3.")
 
-
     criterion = get_balanced_loss(device, "flow", logger=logger)
 
     start_epoch = 1
     best_val_f1 = -1.0
-    epochs_no_improve = 0  # New: Initialize early stopping counter
+    epochs_no_improve = 0
 
     if resume_checkpoint_path and Path(resume_checkpoint_path).is_file():
         logger.info(f"Resuming training from checkpoint: {resume_checkpoint_path}")
         try:
             checkpoint = torch.load(resume_checkpoint_path, map_location=device)
             model.load_state_dict(checkpoint['model_state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            start_epoch = checkpoint['epoch'] + 1
+
+            if load_optimizer_state:
+                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                logger.info("Resumed optimizer state.")
+                if scheduler and 'scheduler_state_dict' in checkpoint and checkpoint[
+                    'scheduler_state_dict'] is not None:
+                    scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+                    logger.info("Resumed LR scheduler state.")
+            else:
+                logger.info("Skipping optimizer state loading as requested (load_optimizer_state=False).")
+
+            start_epoch = checkpoint.get('epoch', 0) + 1
             best_val_f1 = checkpoint.get('best_val_f1', -1.0)
-            # New: Resume scheduler state if it exists
-            if scheduler and 'scheduler_state_dict' in checkpoint:
-                scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-                logger.info("Resumed LR scheduler state.")
-            logger.info(f"Resumed from epoch {checkpoint['epoch']}. Starting at epoch {start_epoch}. Previous best F1: {best_val_f1:.4f}")
+            logger.info(
+                f"Resumed model weights from epoch {checkpoint.get('epoch', 0)}. Starting at epoch {start_epoch}. Previous best F1: {best_val_f1:.4f}")
+
         except Exception as e:
             logger.error(f"Error loading checkpoint: {e}. Starting training from scratch.", exc_info=True)
             start_epoch = 1
             best_val_f1 = -1.0
     elif resume_checkpoint_path:
-        logger.warning(f"Checkpoint path {resume_checkpoint_path} provided but not found. Starting training from scratch.")
-
+        logger.warning(
+            f"Checkpoint path {resume_checkpoint_path} provided but not found. Starting training from scratch.")
 
     train_loader, val_loader = _build_loaders(train_dataset, val_dataset, batch_size, use_weighted_sampler,
                                               num_workers=num_workers_loader, logger=logger)
 
-    for epoch in range(start_epoch, epochs + 1):
+    for epoch in range(start_epoch, start_epoch + epochs):
         model.train()
         total_loss = 0.0
+        # ... (rest of the training loop is correct) ...
         correct_preds_train = 0
         total_samples_train = 0
         nan_batches_train = 0
@@ -166,25 +168,13 @@ def fine_tune_flow_model(
                     categorical_flow_data = None
                 labels = batch["label"].to(device)
             except KeyError as e:
-                logger.error(f"❌ Batch missing expected key: {e}. Check your flow IoTDataset __getitem__.", exc_info=True)
+                logger.error(f"❌ Batch missing expected key: {e}. Check your flow IoTDataset __getitem__.",
+                             exc_info=True)
                 continue
 
             if not torch.isfinite(numerical_flow_data).all():
-                num_nans = (~torch.isfinite(numerical_flow_data)).sum().item()
-                logger.warning(f"  ❌ Epoch {epoch:02d} Batch {batch_idx}: numerical_flow_data contains {num_nans} NaNs/Infs — skipping")
                 nan_batches_train += 1
                 continue
-            if categorical_flow_data is not None and not torch.isfinite(categorical_flow_data.float()).all():
-                num_nans_cat = (~torch.isfinite(categorical_flow_data.float())).sum().item()
-                logger.warning(f"  ❌ Epoch {epoch:02d} Batch {batch_idx}: categorical_flow_data contains {num_nans_cat} NaNs/Infs — skipping")
-                nan_batches_train += 1
-                continue
-
-            if batch_idx == 0 and epoch == 1:
-                abs_max_num = float(numerical_flow_data.abs().max())
-                logger.info(f"  Initial Batch 0 (Flows): numerical_flow_data abs-max = {abs_max_num:.3e}")
-                if abs_max_num > 1e4:
-                    logger.warning("  ⚠️ Flow numerical features seem large — check standardization for flows.")
 
             optimizer.zero_grad()
             logits = model(numerical_flow_data, categorical_flow_data)
@@ -192,8 +182,6 @@ def fine_tune_flow_model(
 
             if not torch.isfinite(loss):
                 nan_batches_train += 1
-                if nan_batches_train <= 5 or nan_batches_train % 20 == 0:
-                    logger.warning(f"  ❌ Epoch {epoch:02d} NaN/Inf loss (Train Batch {batch_idx}, Count: {nan_batches_train}). Logits min/max: {float(logits.min()):.3e}/{float(logits.max()):.3e}")
                 continue
 
             loss.backward()
@@ -233,7 +221,6 @@ def fine_tune_flow_model(
                 logits = model(numerical_flow_data, categorical_flow_data)
                 if not torch.isfinite(logits).all():
                     nan_batches_val += 1
-                    logger.warning(f"  ❌ Epoch {epoch:02d} NaN/Inf logits in validation. Skipping batch.")
                     continue
 
                 val_preds_list.extend(logits.argmax(dim=1).cpu().tolist())
@@ -244,11 +231,13 @@ def fine_tune_flow_model(
             val_accuracy, macro_f1, weighted_f1 = 0.0, 0.0, 0.0
         else:
             val_accuracy = accuracy_score(val_labels_list, val_preds_list)
-            _, _, macro_f1, _ = precision_recall_fscore_support(val_labels_list, val_preds_list, average="macro", zero_division=0)
-            _, _, weighted_f1, _ = precision_recall_fscore_support(val_labels_list, val_preds_list, average="weighted", zero_division=0)
+            _, _, macro_f1, _ = precision_recall_fscore_support(val_labels_list, val_preds_list, average="macro",
+                                                                zero_division=0)
+            _, _, weighted_f1, _ = precision_recall_fscore_support(val_labels_list, val_preds_list, average="weighted",
+                                                                   zero_division=0)
 
         logger.info(
-            f"Epoch {epoch:02d}/{epochs} | LR: {optimizer.param_groups[0]['lr']:.1e} | "
+            f"Epoch {epoch:02d}/{start_epoch + epochs - 1} | LR: {optimizer.param_groups[0]['lr']:.1e} | "
             f"Loss (Trn): {avg_train_loss:6.4f} | "
             f"Acc (Trn/Val): {train_accuracy:5.3f}/{val_accuracy:5.3f} | "
             f"F1 (Mac/Wgt - Val): {macro_f1:5.3f}/{weighted_f1:5.3f} | "
@@ -257,7 +246,7 @@ def fine_tune_flow_model(
 
         if macro_f1 > best_val_f1:
             best_val_f1 = macro_f1
-            epochs_no_improve = 0  # New: Reset counter on improvement
+            epochs_no_improve = 0
             best_model_path = save_dir_path / "model_flow_best.pt"
             checkpoint_data = {
                 'epoch': epoch,
@@ -265,19 +254,18 @@ def fine_tune_flow_model(
                 'optimizer_state_dict': optimizer.state_dict(),
                 'best_val_f1': best_val_f1,
                 'lr': lr,
-                'scheduler_state_dict': scheduler.state_dict() if scheduler else None # New: Save scheduler state
+                'scheduler_state_dict': scheduler.state_dict() if scheduler else None
             }
             torch.save(checkpoint_data, best_model_path)
             logger.info(f"  -> New best validation Macro-F1: {best_val_f1:.4f}. Saved to '{best_model_path}'")
         else:
-            epochs_no_improve += 1  # New: Increment counter if no improvement
-            logger.info(f"  -> Validation Macro-F1 did not improve for {epochs_no_improve} epoch(s). Best is still {best_val_f1:.4f}.")
+            epochs_no_improve += 1
+            logger.info(
+                f"  -> Validation Macro-F1 did not improve for {epochs_no_improve} epoch(s). Best is still {best_val_f1:.4f}.")
 
-        # New: Step the scheduler after validation
         if scheduler:
             scheduler.step(macro_f1)
 
-        # New: Check for early stopping
         if epochs_no_improve >= patience:
             logger.info(f"🛑 Early stopping triggered after {patience} epochs with no improvement. Stopping training.")
             break
@@ -340,7 +328,7 @@ def test_flow_model(
                 nan_batches_test += 1
                 continue
             if categorical_flow_data is not None and not torch.isfinite(categorical_flow_data.float()).all():
-                nan_batches_test +=1
+                nan_batches_test += 1
                 continue
 
             logits = model(numerical_flow_data, categorical_flow_data)
@@ -366,7 +354,8 @@ def test_flow_model(
     elif hasattr(test_dataset, 'get_target_names'):
         try:
             target_names = test_dataset.get_target_names()
-        except: pass
+        except:
+            pass
 
     report = classification_report(all_labels, all_preds, digits=4, zero_division=0, target_names=target_names)
     logger.info(f"Classification Report:\n{report}")
