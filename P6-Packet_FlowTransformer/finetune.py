@@ -264,22 +264,22 @@ def main(args):  # New: main function
         full_flow_dataset, val_ratio=val_ratio, test_ratio=test_ratio, logger_instance=logger
     )
 
-    logger.info("4. Starting Fine-tuning on Flow Data...")
-    try:
-        fine_tune_flow_model(
-            model=flow_finetuning_model_instance,
-            train_dataset=train_flow_dataset,
-            val_dataset=val_flow_dataset,
-            epochs=EPOCHS_FINETUNE, batch_size=BATCH_SIZE_FLOW, lr=LR_FINETUNE, device=DEVICE,
-            save_dir=str(FINETUNED_MODEL_SAVE_DIR), clip_grad=CLIP_GRAD_CFG,
-            use_weighted_sampler=USE_WEIGHTED_SAMPLER_CFG, num_workers_loader=NUM_WORKERS_LOADER,
-            logger=logger,
-            resume_checkpoint_path=args.resume_checkpoint  # Pass the argument here
-        )
-        logger.info("   ✅ Model fine-tuning completed.")
-    except Exception as e:
-        logger.error(f"❌ Error during model fine-tuning: {e}", exc_info=True)
-        exit(1)
+    # logger.info("4. Starting Fine-tuning on Flow Data...")
+    # try:
+    #     fine_tune_flow_model(
+    #         model=flow_finetuning_model_instance,
+    #         train_dataset=train_flow_dataset,
+    #         val_dataset=val_flow_dataset,
+    #         epochs=EPOCHS_FINETUNE, batch_size=BATCH_SIZE_FLOW, lr=LR_FINETUNE, device=DEVICE,
+    #         save_dir=str(FINETUNED_MODEL_SAVE_DIR), clip_grad=CLIP_GRAD_CFG,
+    #         use_weighted_sampler=USE_WEIGHTED_SAMPLER_CFG, num_workers_loader=NUM_WORKERS_LOADER,
+    #         logger=logger,
+    #         resume_checkpoint_path=args.resume_checkpoint  # Pass the argument here
+    #     )
+    #     logger.info("   ✅ Model fine-tuning completed.")
+    # except Exception as e:
+    #     logger.error(f"❌ Error during model fine-tuning: {e}", exc_info=True)
+    #     exit(1)
 
     logger.info("5. Testing Fine-tuned Flow Model...")
     try:
