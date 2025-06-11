@@ -1,7 +1,7 @@
 # train_flows.py
 import os
 from collections import Counter
-from typing import Dict, Optional, List # Added Optional
+from typing import Dict, Optional, List
 import numpy as np
 import torch
 import torch.nn as nn
@@ -12,11 +12,10 @@ from sklearn.metrics import (
     confusion_matrix,
     precision_recall_fscore_support,
 )
-from sklearn.utils.class_weight import compute_class_weight # Will be used if get_balanced_loss is not used
 from torch.utils.data import DataLoader, WeightedRandomSampler
-import logging # Import logging
-from utils.train_utils import get_balanced_loss # Assuming this handles class weights
-from pathlib import Path # For handling paths
+import logging
+from utils.train_utils import get_balanced_loss
+from pathlib import Path
 
 module_logger = logging.getLogger(__name__)
 if not module_logger.hasHandlers():
@@ -93,7 +92,9 @@ def fine_tune_flow_model(
         save_dir: str = "checkpoints_flow_finetuned",
         num_workers_loader: int = 0,
         logger: Optional[logging.Logger] = None,
-        resume_checkpoint_path: Optional[str] = None  # New parameter
+        resume_checkpoint_path: Optional[str] = None,
+        patience: int = 10,  # New: Early stopping patience
+        use_lr_scheduler: bool = True  # New: Flag for learning rate scheduler
 ):
     if logger is None:
         logger = module_logger
@@ -109,10 +110,20 @@ def fine_tune_flow_model(
     optimizer = optim.AdamW(trainable_params, lr=lr)
     logger.info(f"Optimizer AdamW initialized with LR: {lr} for trainable parameters.")
 
-    criterion = get_balanced_loss(device, "flow", logger=logger) # Use "flow" for flow-specific weights if available
+    # New: Initialize learning rate scheduler
+    scheduler = None
+    if use_lr_scheduler:
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, 'max', factor=0.1, patience=3, verbose=True
+        )
+        logger.info("Initialized ReduceLROnPlateau LR scheduler with mode='max', factor=0.1, patience=3.")
+
+
+    criterion = get_balanced_loss(device, "flow", logger=logger)
 
     start_epoch = 1
     best_val_f1 = -1.0
+    epochs_no_improve = 0  # New: Initialize early stopping counter
 
     if resume_checkpoint_path and Path(resume_checkpoint_path).is_file():
         logger.info(f"Resuming training from checkpoint: {resume_checkpoint_path}")
@@ -121,7 +132,11 @@ def fine_tune_flow_model(
             model.load_state_dict(checkpoint['model_state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             start_epoch = checkpoint['epoch'] + 1
-            best_val_f1 = checkpoint.get('best_val_f1', -1.0) # Get best_val_f1 if saved
+            best_val_f1 = checkpoint.get('best_val_f1', -1.0)
+            # New: Resume scheduler state if it exists
+            if scheduler and 'scheduler_state_dict' in checkpoint:
+                scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+                logger.info("Resumed LR scheduler state.")
             logger.info(f"Resumed from epoch {checkpoint['epoch']}. Starting at epoch {start_epoch}. Previous best F1: {best_val_f1:.4f}")
         except Exception as e:
             logger.error(f"Error loading checkpoint: {e}. Starting training from scratch.", exc_info=True)
@@ -145,10 +160,10 @@ def fine_tune_flow_model(
             try:
                 numerical_flow_data = batch["numerical_features"].to(device)
                 categorical_flow_data = batch.get("categorical_features")
-                if categorical_flow_data is not None and categorical_flow_data.numel() > 0: # Check if not empty
+                if categorical_flow_data is not None and categorical_flow_data.numel() > 0:
                     categorical_flow_data = categorical_flow_data.to(device)
                 else:
-                    categorical_flow_data = None # Ensure it's None if empty
+                    categorical_flow_data = None
                 labels = batch["label"].to(device)
             except KeyError as e:
                 logger.error(f"❌ Batch missing expected key: {e}. Check your flow IoTDataset __getitem__.", exc_info=True)
@@ -159,16 +174,16 @@ def fine_tune_flow_model(
                 logger.warning(f"  ❌ Epoch {epoch:02d} Batch {batch_idx}: numerical_flow_data contains {num_nans} NaNs/Infs — skipping")
                 nan_batches_train += 1
                 continue
-            if categorical_flow_data is not None and not torch.isfinite(categorical_flow_data.float()).all(): # Check only if not None
+            if categorical_flow_data is not None and not torch.isfinite(categorical_flow_data.float()).all():
                 num_nans_cat = (~torch.isfinite(categorical_flow_data.float())).sum().item()
                 logger.warning(f"  ❌ Epoch {epoch:02d} Batch {batch_idx}: categorical_flow_data contains {num_nans_cat} NaNs/Infs — skipping")
                 nan_batches_train += 1
                 continue
 
-            if batch_idx == 0 and epoch == 1: # Log only for the very first batch of a new run
+            if batch_idx == 0 and epoch == 1:
                 abs_max_num = float(numerical_flow_data.abs().max())
                 logger.info(f"  Initial Batch 0 (Flows): numerical_flow_data abs-max = {abs_max_num:.3e}")
-                if abs_max_num > 1e4: # Increased threshold
+                if abs_max_num > 1e4:
                     logger.warning("  ⚠️ Flow numerical features seem large — check standardization for flows.")
 
             optimizer.zero_grad()
@@ -202,10 +217,10 @@ def fine_tune_flow_model(
                 try:
                     numerical_flow_data = batch["numerical_features"].to(device)
                     categorical_flow_data = batch.get("categorical_features")
-                    if categorical_flow_data is not None and categorical_flow_data.numel() > 0: # Check if not empty
+                    if categorical_flow_data is not None and categorical_flow_data.numel() > 0:
                         categorical_flow_data = categorical_flow_data.to(device)
                     else:
-                        categorical_flow_data = None # Ensure it's None if empty
+                        categorical_flow_data = None
                     labels = batch["label"].to(device)
                 except KeyError as e:
                     logger.error(f"❌ Validation Batch missing expected key: {e}.", exc_info=True)
@@ -242,16 +257,30 @@ def fine_tune_flow_model(
 
         if macro_f1 > best_val_f1:
             best_val_f1 = macro_f1
-            best_model_path = save_dir_path / "model_flow_best.pt" # Use Path object
+            epochs_no_improve = 0  # New: Reset counter on improvement
+            best_model_path = save_dir_path / "model_flow_best.pt"
             checkpoint_data = {
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'best_val_f1': best_val_f1,
-                'lr': lr # Save learning rate as well
+                'lr': lr,
+                'scheduler_state_dict': scheduler.state_dict() if scheduler else None # New: Save scheduler state
             }
             torch.save(checkpoint_data, best_model_path)
             logger.info(f"  -> New best validation Macro-F1: {best_val_f1:.4f}. Saved to '{best_model_path}'")
+        else:
+            epochs_no_improve += 1  # New: Increment counter if no improvement
+            logger.info(f"  -> Validation Macro-F1 did not improve for {epochs_no_improve} epoch(s). Best is still {best_val_f1:.4f}.")
+
+        # New: Step the scheduler after validation
+        if scheduler:
+            scheduler.step(macro_f1)
+
+        # New: Check for early stopping
+        if epochs_no_improve >= patience:
+            logger.info(f"🛑 Early stopping triggered after {patience} epochs with no improvement. Stopping training.")
+            break
 
     logger.info("\n" + "=" * 30 + " Flow Fine-tuning Finished " + "=" * 30)
     logger.info(f"Best validation Macro-F1 achieved: {best_val_f1:.4f}")
@@ -262,7 +291,7 @@ def test_flow_model(
         test_dataset,
         batch_size: int = 64,
         device: str = "cuda",
-        model_path: Optional[str] = None, # Can be path to model state_dict or full checkpoint
+        model_path: Optional[str] = None,
         logger: Optional[logging.Logger] = None
 ):
     if logger is None:
@@ -276,7 +305,6 @@ def test_flow_model(
                 model.load_state_dict(checkpoint['model_state_dict'])
                 logger.info("Loaded model_state_dict from checkpoint for testing.")
             else:
-                # Assume it's just the model state_dict
                 model.load_state_dict(checkpoint)
                 logger.info("Loaded model state_dict directly for testing.")
         except Exception as e:
@@ -299,10 +327,10 @@ def test_flow_model(
             try:
                 numerical_flow_data = batch["numerical_features"].to(device)
                 categorical_flow_data = batch.get("categorical_features")
-                if categorical_flow_data is not None and categorical_flow_data.numel() > 0: # Check if not empty
+                if categorical_flow_data is not None and categorical_flow_data.numel() > 0:
                     categorical_flow_data = categorical_flow_data.to(device)
                 else:
-                    categorical_flow_data = None # Ensure it's None if empty
+                    categorical_flow_data = None
                 labels = batch["label"].to(device)
             except KeyError as e:
                 logger.error(f"❌ Test Batch missing expected key: {e}.", exc_info=True)
@@ -311,7 +339,7 @@ def test_flow_model(
             if not torch.isfinite(numerical_flow_data).all():
                 nan_batches_test += 1
                 continue
-            if categorical_flow_data is not None and not torch.isfinite(categorical_flow_data.float()).all(): # Check only if not None
+            if categorical_flow_data is not None and not torch.isfinite(categorical_flow_data.float()).all():
                 nan_batches_test +=1
                 continue
 
@@ -333,13 +361,12 @@ def test_flow_model(
     logger.info(f"Overall Test Accuracy: {accuracy:.4f}")
 
     target_names = None
-    # Attempt to get target names from dataset if available (e.g., for more descriptive reports)
     if hasattr(test_dataset, 'classes') and test_dataset.classes:
         target_names = test_dataset.classes
-    elif hasattr(test_dataset, 'get_target_names'): # Custom method you might implement
+    elif hasattr(test_dataset, 'get_target_names'):
         try:
             target_names = test_dataset.get_target_names()
-        except: pass # Ignore if it fails
+        except: pass
 
     report = classification_report(all_labels, all_preds, digits=4, zero_division=0, target_names=target_names)
     logger.info(f"Classification Report:\n{report}")
