@@ -3,7 +3,7 @@
     "raw_packet_dir": "../../../dataset/raw_dataset",
     "processed_packet_pt": "../../../dataset/packet_subset_halved.pt",
     "raw_flow_dir": "../../../dataset/roni/DatasetFlow",
-    "processed_flow_pt": "../../../dataset/processed_flows_subset.pt"
+    "processed_flow_pt": "../../../dataset/processed_flows.pt"
   },
   "model_architecture": {
     "transformer_body": {
