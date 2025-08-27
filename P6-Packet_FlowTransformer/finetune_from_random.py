@@ -207,7 +207,8 @@ def main(args):
                 save_dir=str(FINETUNED_MODEL_SAVE_DIR), clip_grad=CLIP_GRAD_CFG,
                 num_workers_loader=NUM_WORKERS_LOADER, logger=logger,
                 patience=3, use_lr_scheduler=True,
-                resume_checkpoint_path=str(FINETUNED_MODEL_SAVE_DIR / "model_flow_best.pt")
+                resume_checkpoint_path=str(FINETUNED_MODEL_SAVE_DIR / "model_flow_best.pt"),
+                load_optimizer_state=False
             )
 
         logger.info("\n" + "=" * 30 + " Gradual Unfreezing Complete " + "=" * 30)
